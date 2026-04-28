@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::providers::TokenProvider;
-use crate::types::{TokenInfo, ProviderError};
+use crate::types::TokenInfo;
 use tracing::{info, warn, debug, error};
 
 pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -> TokenInfo {
@@ -25,6 +25,7 @@ pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -
             chain: chain.to_string(),
             context: address.to_string(),
             label: None,
+            long_label: None,
             decimals: 0,
             provider: "none".to_string(),
         };
@@ -39,10 +40,11 @@ pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -
         match provider.get_token_info(address).await {
             Ok(info) => {
                 // Check if this provider found a label (token name)
-                if info.label.is_some() {
-                    info!("Provider {} returned token WITH name: {:?}", provider.name(), info.label);
-                    return info; // Found a name, return immediately
-                } else {
+                                    // In the provider loop, change the condition:
+                    if info.label.is_some() {
+                        info!("Provider {} returned token WITH label: {:?}", provider.name(), info.label);
+                        return info;
+                    } else {
                     info!("Provider {} returned token WITHOUT name, continuing search...", provider.name());
                     // Store as best result but continue searching
                     if best_result.is_none() {
@@ -68,6 +70,7 @@ pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -
         chain: chain.to_string(),
         context: address.to_string(),
         label: None,
+        long_label: None,
         decimals: 0,
         provider: "none".to_string(),
     }

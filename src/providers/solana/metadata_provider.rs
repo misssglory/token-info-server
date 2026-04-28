@@ -19,7 +19,7 @@ impl MetadataApiProvider {
         }
     }
     
-    async fn fetch_metaplex_metadata(&self, mint_address: &str) -> Option<(String, u8)> {
+    async fn fetch_metaplex_metadata(&self, mint_address: &str) -> Option<(String, Option<String>, u8)> {
         // Metaplex Token Metadata Program ID
         let metadata_program_id = Pubkey::from_str("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s").ok()?;
         let mint_pubkey = Pubkey::from_str(mint_address).ok()?;
@@ -72,16 +72,21 @@ impl MetadataApiProvider {
                 return None;
             }
             
-            let display_name = if !symbol.is_empty() && symbol != name {
-                format!("{} ({})", name, symbol)
+            // Parse label (short name) and long_label (full name)
+            let (label, long_label) = if !symbol.is_empty() && symbol != name {
+                // Symbol is the short name (e.g., "Bubbles")
+                // Name is the long description (e.g., "Michael jackson Chimpanzee")
+                (symbol.clone(), Some(name.clone()))
             } else {
-                name
+                // If no symbol, use name as label and no long_label
+                (name.clone(), None)
             };
             
-            tracing::info!("Found Metaplex metadata: {}", display_name);
-            // Try to get decimals from mint account
+            tracing::info!("Found Metaplex metadata - label: {}, long_label: {:?}", label, long_label);
+            
+            // Get decimals from mint account
             let decimals = self.get_token_decimals(mint_address).await.unwrap_or(6);
-            return Some((display_name, decimals));
+            return Some((label, long_label, decimals));
         }
         
         None
@@ -121,11 +126,12 @@ impl TokenProvider for MetadataApiProvider {
     async fn get_token_info(&self, address: &str) -> Result<TokenInfo, ProviderError> {
         tracing::info!("Fetching token metadata from Metaplex for: {}", address);
         
-        if let Some((name, decimals)) = self.fetch_metaplex_metadata(address).await {
+        if let Some((label, long_label, decimals)) = self.fetch_metaplex_metadata(address).await {
             return Ok(TokenInfo {
                 chain: self.chain().to_string(),
                 context: address.to_string(),
-                label: Some(name),
+                label: Some(label),
+                long_label,
                 decimals,
                 provider: self.name().to_string(),
             });

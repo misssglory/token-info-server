@@ -7,6 +7,8 @@ pub struct TokenInfo {
     pub decimals: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub long_label: Option<String>,
     pub provider: String,
 }
 

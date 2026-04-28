@@ -50,6 +50,7 @@ impl TokenProvider for BscProvider {
                 chain: self.chain().to_string(),
                 context: address.to_string(),
                 label: Some(symbol.to_string()),
+                long_label: None,
                 decimals: *decimals,
                 provider: self.name().to_string(),
             });

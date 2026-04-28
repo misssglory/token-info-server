@@ -50,6 +50,7 @@ impl TokenProvider for SolanaRpcProvider {
                 chain: self.chain().to_string(),
                 context: address.to_string(),
                 label: Some(name.to_string()),
+                long_label: None,
                 decimals: *decimals,
                 provider: self.name().to_string(),
             });

@@ -81,6 +81,7 @@ impl TokenProvider for PumpfunProvider {
                 chain: self.chain().to_string(),
                 context: address.to_string(),
                 label: Some(name),
+                long_label: None,
                 decimals,
                 provider: self.name().to_string(),
             });
