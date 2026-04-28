@@ -1,0 +1,6 @@
+/target/
+.env
+*.log
+*.pid
+*.bkp
+
