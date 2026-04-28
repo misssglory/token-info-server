@@ -1,61 +1,99 @@
 use async_trait::async_trait;
 use crate::types::{TokenInfo, ProviderError};
 use crate::providers::TokenProvider;
-use reqwest::Client;
-use serde_json::json;
+use solana_client::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
+use std::str::FromStr;
 
 pub struct MetadataApiProvider {
-    http_client: Client,
+    rpc_client: RpcClient,
     priority: u8,
 }
 
 impl MetadataApiProvider {
-    pub fn new(priority: u8) -> Self {
+    pub fn new(rpc_url: String, priority: u8) -> Self {
         tracing::info!("Initializing Metadata API provider with priority {}", priority);
         Self {
-            http_client: Client::new(),
+            rpc_client: RpcClient::new(rpc_url),
             priority,
         }
     }
     
-    async fn fetch_from_tx_parser(&self, mint_address: &str) -> Option<(String, u8)> {
-        // Using tx.parser API (public endpoint)
-        let url = format!("https://api.tx.parser.solana.com/token/{}", mint_address);
+    async fn fetch_metaplex_metadata(&self, mint_address: &str) -> Option<(String, u8)> {
+        // Metaplex Token Metadata Program ID
+        let metadata_program_id = Pubkey::from_str("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s").ok()?;
+        let mint_pubkey = Pubkey::from_str(mint_address).ok()?;
         
-        if let Ok(response) = self.http_client.get(&url).send().await {
-            if let Ok(json) = response.json::<serde_json::Value>().await {
-                if let Some(name) = json.get("name").and_then(|n| n.as_str()) {
-                    let symbol = json.get("symbol").and_then(|s| s.as_str()).unwrap_or("");
-                    let decimals = json.get("decimals").and_then(|d| d.as_u64()).unwrap_or(6) as u8;
-                    return Some((format!("{} ({})", name, symbol), decimals));
-                }
+        // Derive the metadata account PDA
+        let seeds = &[
+            b"metadata",
+            metadata_program_id.as_ref(),
+            mint_pubkey.as_ref(),
+        ];
+        
+        let (metadata_pubkey, _) = Pubkey::find_program_address(seeds, &metadata_program_id);
+        tracing::debug!("Looking for metadata at: {}", metadata_pubkey);
+        
+        // Fetch the metadata account
+        if let Ok(account) = self.rpc_client.get_account(&metadata_pubkey) {
+            let data = &account.data;
+            let mut offset = 1; // Skip key byte
+            
+            // Skip update_authority (32 bytes)
+            if offset + 32 > data.len() { return None; }
+            offset += 32;
+            
+            // Skip mint (32 bytes)
+            if offset + 32 > data.len() { return None; }
+            offset += 32;
+            
+            // Read name
+            if offset + 4 > data.len() { return None; }
+            let name_len = u32::from_le_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]]) as usize;
+            offset += 4;
+            
+            if offset + name_len > data.len() { return None; }
+            let name = String::from_utf8_lossy(&data[offset..offset+name_len]).to_string();
+            offset += name_len;
+            
+            // Read symbol
+            if offset + 4 > data.len() { return None; }
+            let symbol_len = u32::from_le_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]]) as usize;
+            offset += 4;
+            
+            if offset + symbol_len > data.len() { return None; }
+            let symbol = String::from_utf8_lossy(&data[offset..offset+symbol_len]).to_string();
+            
+            // Clean up null bytes and empty strings
+            let name = name.trim_matches(char::from(0)).to_string();
+            let symbol = symbol.trim_matches(char::from(0)).to_string();
+            
+            if name.is_empty() {
+                return None;
             }
+            
+            let display_name = if !symbol.is_empty() && symbol != name {
+                format!("{} ({})", name, symbol)
+            } else {
+                name
+            };
+            
+            tracing::info!("Found Metaplex metadata: {}", display_name);
+            // Try to get decimals from mint account
+            let decimals = self.get_token_decimals(mint_address).await.unwrap_or(6);
+            return Some((display_name, decimals));
         }
+        
         None
     }
     
-    async fn fetch_from_das_api(&self, mint_address: &str) -> Option<(String, u8)> {
-        // Using Helius DAS API (if you have API key)
-        if let Ok(api_key) = std::env::var("HELIUS_API_KEY") {
-            let url = format!("https://mainnet.helius-rpc.com/?api-key={}", api_key);
-            let body = json!({
-                "jsonrpc": "2.0",
-                "id": "1",
-                "method": "getAsset",
-                "params": [mint_address]
-            });
-            
-            if let Ok(response) = self.http_client.post(&url).json(&body).send().await {
-                if let Ok(json) = response.json::<serde_json::Value>().await {
-                    if let Some(content) = json.get("result").and_then(|r| r.get("content")) {
-                        if let Some(metadata) = content.get("metadata") {
-                            if let Some(name) = metadata.get("name").and_then(|n| n.as_str()) {
-                                let symbol = metadata.get("symbol").and_then(|s| s.as_str()).unwrap_or("");
-                                return Some((format!("{} ({})", name, symbol), 6));
-                            }
-                        }
-                    }
-                }
+    async fn get_token_decimals(&self, mint_address: &str) -> Option<u8> {
+        let mint_pubkey = Pubkey::from_str(mint_address).ok()?;
+        if let Ok(account) = self.rpc_client.get_account(&mint_pubkey) {
+            // Mint account layout: 
+            // mint_authority (32 bytes), supply (8 bytes), decimals (1 byte)
+            if account.data.len() >= 45 {
+                return Some(account.data[44]); // decimals is at offset 44
             }
         }
         None
@@ -81,7 +119,9 @@ impl TokenProvider for MetadataApiProvider {
     }
     
     async fn get_token_info(&self, address: &str) -> Result<TokenInfo, ProviderError> {
-        if let Some((name, decimals)) = self.fetch_from_tx_parser(address).await {
+        tracing::info!("Fetching token metadata from Metaplex for: {}", address);
+        
+        if let Some((name, decimals)) = self.fetch_metaplex_metadata(address).await {
             return Ok(TokenInfo {
                 chain: self.chain().to_string(),
                 context: address.to_string(),
@@ -91,6 +131,7 @@ impl TokenProvider for MetadataApiProvider {
             });
         }
         
+        tracing::debug!("No Metaplex metadata found for: {}", address);
         Err(ProviderError::NotFound)
     }
 }

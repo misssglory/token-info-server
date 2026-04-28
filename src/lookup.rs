@@ -30,13 +30,25 @@ pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -
         };
     }
     
+    // Track the best result we've found
+    let mut best_result: Option<TokenInfo> = None;
+    
     // Try providers in priority order
     for provider in relevant_providers {
         debug!("Trying provider {} (priority {})", provider.name(), provider.priority());
         match provider.get_token_info(address).await {
             Ok(info) => {
-                info!("Provider {} returned token info for {}", provider.name(), address);
-                return info;
+                // Check if this provider found a label (token name)
+                if info.label.is_some() {
+                    info!("Provider {} returned token WITH name: {:?}", provider.name(), info.label);
+                    return info; // Found a name, return immediately
+                } else {
+                    info!("Provider {} returned token WITHOUT name, continuing search...", provider.name());
+                    // Store as best result but continue searching
+                    if best_result.is_none() {
+                        best_result = Some(info);
+                    }
+                }
             }
             Err(e) => {
                 warn!("Provider {} failed for {}: {}", provider.name(), address, e);
@@ -44,6 +56,13 @@ pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -
         }
     }
     
+    // If we found any result (even without name), return it
+    if let Some(result) = best_result {
+        warn!("No provider found a token name for {}, returning basic info", address);
+        return result;
+    }
+    
+    // No provider succeeded
     error!("All providers failed for address: {}", address);
     TokenInfo {
         chain: chain.to_string(),

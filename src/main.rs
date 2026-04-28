@@ -57,20 +57,27 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting Token Info Server");
     info!("Version: {}", env!("CARGO_PKG_VERSION"));
     
-    // Initialize providers with priorities
+    // Initialize providers with priorities (lower number = higher priority)
     let mut providers: Vec<Arc<dyn TokenProvider>> = Vec::new();
     
-    // Solana providers (priorities defined in config)
-    providers.push(Arc::new(PumpfunProvider::new(config.solana_rpc.clone(), 1)));
-    providers.push(Arc::new(SolanaRpcProvider::new(config.solana_rpc.clone(), 2)));
+    // ===== SOLANA PROVIDERS =====
+    // Priority 1: Metaplex metadata provider (fetches token names from on-chain metadata)
+    providers.push(Arc::new(MetadataApiProvider::new(config.solana_rpc.clone(), 1)));
     
-    // Ethereum providers
+    // Priority 2: Pump.fun provider (specialized for Pump.fun tokens)
+    providers.push(Arc::new(PumpfunProvider::new(config.solana_rpc.clone(), 2)));
+    
+    // Priority 3: Basic Solana RPC provider (fallback - returns decimals only, no name)
+    providers.push(Arc::new(SolanaRpcProvider::new(config.solana_rpc.clone(), 3)));
+    
+    // ===== ETHEREUM PROVIDERS =====
     providers.push(Arc::new(EthereumProvider::new(config.ethereum_rpc.clone(), 1)));
     
-    // BSC providers
+    // ===== BSC PROVIDERS =====
     providers.push(Arc::new(BscProvider::new(config.bsc_rpc.clone(), 1)));
     
     info!("Initialized {} providers", providers.len());
+    info!("Provider order: Metadata(1), Pumpfun(2), SolanaRPC(3), Ethereum(1), BSC(1)");
     
     // CLI mode
     if let Some(address) = cli.token_address {
@@ -78,6 +85,14 @@ async fn main() -> anyhow::Result<()> {
         let token_info = lookup_token(&providers, &address).await;
         let json = serde_json::to_string_pretty(&token_info)?;
         println!("{}", json);
+        
+        // Show which provider was used
+        if let Some(label) = &token_info.label {
+            info!("✓ Token name found: '{}' using provider: {}", label, token_info.provider);
+        } else {
+            info!("⚠ No token name found, using provider: {}", token_info.provider);
+        }
+        
         info!("Token lookup completed successfully");
         return Ok(());
     }
