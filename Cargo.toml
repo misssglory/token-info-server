@@ -11,7 +11,7 @@ tokio = { version = "1.49", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.149"
 
-# HTTP client with rustls (no OpenSSL dependency)
+# HTTP client with rustls
 reqwest = { version = "0.13.3", features = ["json"], default-features = false }
 
 # CLI
@@ -23,20 +23,20 @@ async-trait = "0.1"
 thiserror = "2.0"
 hex = "0.4"
 
-# Solana - Using consistent versions
+# Solana
 solana-client = "3.1.14"
 solana-sdk = "3.0.0"
 solana-program = "4.0.0"
 solana-rpc-client = "3.1.14"
 spl-token = { version = "9.0.0", features = ["no-entrypoint"] }
 
-# Alloy for Ethereum/BSC - Using latest compatible
+# Alloy for Ethereum/BSC
 alloy = { version = "2.0.1", features = ["full", "rpc-types-eth", "provider-http", "contract"] }
 alloy-provider = "2.0.1"
 alloy-transport-http = "2.0.1"
 alloy-primitives = "1.5.7"
 
-# Optional: For better error handling
+# Optional
 futures = "0.3.32"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

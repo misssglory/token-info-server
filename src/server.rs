@@ -1,12 +1,12 @@
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use std::sync::Arc;
-use crate::providers::Provider;
-use crate::types::TokenInfo;
-use tracing::{info, error, warn, debug};
+use crate::providers::TokenProvider;
+use crate::lookup::lookup_token;
+use tracing::{info, error, debug};
 
 pub async fn run_server(
-    providers: Vec<Arc<dyn Provider + Send + Sync>>,
+    providers: Vec<Arc<dyn TokenProvider>>,
     host: &str,
     port: u16,
 ) -> anyhow::Result<()> {
@@ -19,8 +19,6 @@ pub async fn run_server(
         match listener.accept().await {
             Ok((stream, addr)) => {
                 info!("New connection from: {}", addr);
-                debug!("Connection details: {:?}", stream);
-                
                 let providers = providers.clone();
                 tokio::spawn(async move {
                     if let Err(e) = handle_connection(stream, providers).await {
@@ -42,7 +40,7 @@ pub async fn run_server(
 
 async fn handle_connection(
     mut stream: TcpStream,
-    providers: Vec<Arc<dyn Provider + Send + Sync>>,
+    providers: Vec<Arc<dyn TokenProvider>>,
 ) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.split();
     let mut reader = BufReader::new(reader);
@@ -81,28 +79,4 @@ async fn handle_connection(
     }
 
     Ok(())
-}
-
-async fn lookup_token(providers: &[Arc<dyn Provider + Send + Sync>], address: &str) -> TokenInfo {
-    for provider in providers {
-        if provider.supports_address(address) {
-            debug!("Address {} supported by {}", address, provider.name());
-            match provider.get_token_info(address).await {
-                Ok(info) => {
-                    info!("Provider {} returned token info for {}", provider.name(), address);
-                    return info;
-                },
-                Err(e) => {
-                    warn!("Provider {} failed for {}: {}", provider.name(), address, e);
-                }
-            }
-        }
-    }
-
-    warn!("No provider could resolve token address: {}", address);
-    TokenInfo {
-        context: address.to_string(),
-        label: "?".to_string(),
-        decimals: 0,
-    }
 }

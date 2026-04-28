@@ -1,14 +1,16 @@
 mod providers;
 mod server;
 mod types;
+mod lookup;
+mod config;
 
 use clap::Parser;
 use dotenv::dotenv;
-use providers::{Provider, SolanaProvider, EthereumProvider, BscProvider};
-use types::TokenInfo;
+use providers::*;
 use std::sync::Arc;
 use tracing::{info, error};
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{fmt, EnvFilter};
+use crate::lookup::lookup_token;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -31,10 +33,8 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Load environment variables from .env file
     dotenv().ok();
     
-    // Initialize tracing subscriber
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"));
     
@@ -48,28 +48,31 @@ async fn main() -> anyhow::Result<()> {
         .init();
     
     let cli = Cli::parse();
+    let config = config::Config::from_env();
     
-    // Set log level based on verbose flag
     if cli.verbose {
-        // Use set_global_default instead of with_default for simplicity
         tracing::info!("Verbose logging enabled");
-        // Note: The logging level is already set above; for dynamic changes,
-        // you would need to use reloadable layers or just restart with RUST_LOG=debug
     }
     
     info!("Starting Token Info Server");
     info!("Version: {}", env!("CARGO_PKG_VERSION"));
     
-    // Create providers with configuration from .env
-    let providers: Vec<Arc<dyn Provider + Send + Sync>> = vec![
-        Arc::new(SolanaProvider::new()),
-        Arc::new(EthereumProvider::new()),
-        Arc::new(BscProvider::new()),
-    ];
+    // Initialize providers with priorities
+    let mut providers: Vec<Arc<dyn TokenProvider>> = Vec::new();
     
-    info!("Initialized providers: Solana, Ethereum, BSC");
-
-    // CLI mode: lookup single address
+    // Solana providers (priorities defined in config)
+    providers.push(Arc::new(PumpfunProvider::new(config.solana_rpc.clone(), 1)));
+    providers.push(Arc::new(SolanaRpcProvider::new(config.solana_rpc.clone(), 2)));
+    
+    // Ethereum providers
+    providers.push(Arc::new(EthereumProvider::new(config.ethereum_rpc.clone(), 1)));
+    
+    // BSC providers
+    providers.push(Arc::new(BscProvider::new(config.bsc_rpc.clone(), 1)));
+    
+    info!("Initialized {} providers", providers.len());
+    
+    // CLI mode
     if let Some(address) = cli.token_address {
         info!("CLI mode: looking up token address: {}", address);
         let token_info = lookup_token(&providers, &address).await;
@@ -78,8 +81,8 @@ async fn main() -> anyhow::Result<()> {
         info!("Token lookup completed successfully");
         return Ok(());
     }
-
-    // Server mode: start TCP listener
+    
+    // Server mode
     info!("Server mode: starting on {}:{}", cli.host, cli.port);
     println!("Starting token info server on {}:{}", cli.host, cli.port);
     println!("Press Ctrl+C to stop");
@@ -88,34 +91,6 @@ async fn main() -> anyhow::Result<()> {
         error!("Server error: {}", e);
         return Err(e);
     }
-
-    Ok(())
-}
-
-async fn lookup_token(providers: &[Arc<dyn Provider + Send + Sync>], address: &str) -> TokenInfo {
-    info!("Looking up token address: {}", address);
     
-    for provider in providers {
-        if provider.supports_address(address) {
-            info!("Address supported by provider: {}", provider.name());
-            match provider.get_token_info(address).await {
-                Ok(info) => {
-                    info!("Successfully fetched token info from {}: {:?}", provider.name(), info);
-                    return info;
-                },
-                Err(e) => {
-                    error!("Provider {} failed: {}", provider.name(), e);
-                    // Continue to next provider if this one fails
-                }
-            }
-        }
-    }
-
-    error!("No provider could resolve token address: {}", address);
-    // Return placeholder if not found
-    TokenInfo {
-        context: address.to_string(),
-        label: "?".to_string(),
-        decimals: 0,
-    }
+    Ok(())
 }

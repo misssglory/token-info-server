@@ -2,9 +2,12 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TokenInfo {
+    pub chain: String,
     pub context: String,
-    pub label: String,
     pub decimals: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub provider: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -17,4 +20,14 @@ pub enum ProviderError {
     NotFound,
     #[error("Chain error: {0}")]
     ChainError(String),
+    #[error("Provider not configured for chain: {0}")]
+    NotConfigured(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct ProviderConfig {
+    pub name: String,
+    pub chain: String,
+    pub priority: u8,
+    pub enabled: bool,
 }
