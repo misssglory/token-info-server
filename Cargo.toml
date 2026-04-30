@@ -54,3 +54,4 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 dotenv = "0.15.0"
 once_cell = "1.21.4"
 toml = "1.1.2"
+spl-token-metadata-interface = "1.0.0"
