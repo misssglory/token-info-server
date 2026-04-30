@@ -1,9 +1,11 @@
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use std::sync::Arc;
+use std::time::Instant;
 use crate::providers::TokenProvider;
 use crate::lookup::lookup_token;
-use tracing::{info, error, debug};
+use tracing::{info, error, debug, warn, trace};
+use serde_json::Value;
 
 pub async fn run_server(
     providers: Vec<Arc<dyn TokenProvider>>,
@@ -12,19 +14,27 @@ pub async fn run_server(
 ) -> anyhow::Result<()> {
     let addr = format!("{}:{}", host, port);
     let listener = TcpListener::bind(&addr).await?;
-    info!("TCP listener bound to {}", addr);
-    println!("Listening on {}", addr);
+    info!("TCP server listening on {}", addr);
+    println!("✅ Token Info Server running on {}", addr);
+    println!("📡 Accepting TCP connections...");
+    println!("💡 Accepts plain addresses or JSON: {{\"context\":\"address\"}}");
 
+    let mut connection_id = 0;
+    
     loop {
         match listener.accept().await {
-            Ok((stream, addr)) => {
-                info!("New connection from: {}", addr);
+            Ok((stream, client_addr)) => {
+                connection_id += 1;
+                let conn_id = connection_id;
+                info!("[conn:{}] New TCP connection from: {}", conn_id, client_addr);
+                trace!("[conn:{}] Connection details: {:?}", conn_id, stream);
+                
                 let providers = providers.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream, providers).await {
-                        error!("Error handling connection from {}: {}", addr, e);
+                    if let Err(e) = handle_connection(stream, providers, conn_id, client_addr).await {
+                        error!("[conn:{}] Error handling connection: {}", conn_id, e);
                     } else {
-                        info!("Connection from {} closed successfully", addr);
+                        info!("[conn:{}] Connection closed successfully", conn_id);
                     }
                 });
             }
@@ -38,45 +48,108 @@ pub async fn run_server(
     Ok(())
 }
 
+fn extract_address(input: &str) -> String {
+    // Try to parse as JSON first
+    if let Ok(json) = serde_json::from_str::<Value>(input) {
+        // Check for context field
+        if let Some(context) = json.get("context").and_then(|v| v.as_str()) {
+            trace!("Extracted address from JSON context field: {}", context);
+            return context.to_string();
+        }
+        // Check for other common field names
+        if let Some(address) = json.get("address").and_then(|v| v.as_str()) {
+            trace!("Extracted address from JSON address field: {}", address);
+            return address.to_string();
+        }
+        if let Some(mint) = json.get("mint").and_then(|v| v.as_str()) {
+            trace!("Extracted address from JSON mint field: {}", mint);
+            return mint.to_string();
+        }
+        // If JSON but no known fields, return as-is (might be just a string in quotes)
+        if let Some(s) = json.as_str() {
+            trace!("Extracted address from JSON string: {}", s);
+            return s.to_string();
+        }
+        trace!("JSON detected but no address field found, using raw input");
+    }
+    
+    // Not JSON or no extractable field, return trimmed input
+    input.trim().to_string()
+}
+
 async fn handle_connection(
     mut stream: TcpStream,
     providers: Vec<Arc<dyn TokenProvider>>,
+    conn_id: u32,
+    client_addr: std::net::SocketAddr,
 ) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.split();
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
+    let mut request_count = 0;
+    let connection_start = Instant::now();
+
+    info!("[conn:{}] Starting to process requests from {}", conn_id, client_addr);
 
     loop {
         line.clear();
         match reader.read_line(&mut line).await {
             Ok(0) => {
-                debug!("Connection closed by client (EOF)");
+                trace!("[conn:{}] Client closed connection (EOF)", conn_id);
                 break;
             },
             Ok(_) => {
-                let address = line.trim();
-                if address.is_empty() {
-                    debug!("Received empty line, skipping");
+                let raw_input = line.trim();
+                if raw_input.is_empty() {
+                    debug!("[conn:{}] Received empty line, skipping", conn_id);
                     continue;
                 }
                 
-                info!("Looking up token: {}", address);
-                let token_info = lookup_token(&providers, address).await;
-                let response = serde_json::to_string(&token_info)?;
+                request_count += 1;
+                let request_start = Instant::now();
                 
-                debug!("Response: {}", response);
+                // Extract the actual address from the input (supports JSON)
+                let address = extract_address(raw_input);
+                
+                info!("[conn:{}] 📥 Request #{}: input='{}' -> address='{}'", 
+                      conn_id, request_count, raw_input, address);
+                trace!("[conn:{}] Full request line: {:?}", conn_id, line);
+                
+                // Perform token lookup
+                let token_info = lookup_token(&providers, &address).await;
+                
+                // Log the result
+                let response = serde_json::to_string(&token_info)?;
+                let response_size = response.len();
+                
+                if let Some(label) = &token_info.label {
+                    info!("[conn:{}] ✓ Request #{}: Found '{}' (provider: {})", 
+                          conn_id, request_count, label, token_info.provider);
+                } else {
+                    warn!("[conn:{}] ⚠ Request #{}: No label found for '{}' (provider: {})", 
+                          conn_id, request_count, address, token_info.provider);
+                }
+                
+                // Send response
                 writer.write_all(response.as_bytes()).await?;
                 writer.write_all(b"\n").await?;
                 writer.flush().await?;
                 
-                info!("Sent response for token: {}", address);
+                let request_duration = request_start.elapsed();
+                debug!("[conn:{}] Request #{} completed in {:?}, response size: {} bytes", 
+                       conn_id, request_count, request_duration, response_size);
+                trace!("[conn:{}] Response body: {}", conn_id, response);
             }
             Err(e) => {
-                error!("Error reading line from connection: {}", e);
+                error!("[conn:{}] Error reading from connection: {}", conn_id, e);
                 break;
             }
         }
     }
-
+    
+    let connection_duration = connection_start.elapsed();
+    info!("[conn:{}] Connection summary: {} requests processed in {:?}", 
+          conn_id, request_count, connection_duration);
+    
     Ok(())
 }
