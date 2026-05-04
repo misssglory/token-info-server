@@ -1,0 +1,16 @@
+[server]
+host = "127.0.0.1"
+port = 9002 
+
+[logging]
+level = "debug"
+# Available levels: trace, debug, info, warn, error
+# TCP messages will be logged based on this level
+
+[rpc]
+solana = "https://api.mainnet-beta.solana.com"
+ethereum = "https://eth-mainnet.g.alchemy.com/v2/demo"
+bsc = "https://bsc-dataseed.binance.org"
+
+[provider_priorities]
+# Optional: Configure provider priorities per chain
