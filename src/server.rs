@@ -21,7 +21,8 @@ pub async fn run_server(
     let addr = format!("{}:{}", host, port);
     let listener = TcpListener::bind(&addr).await?;
     
-    let token_index = Arc::new(TokenIndex::new(cache.clone()));
+    // Create token index with forwarder for TG commands
+    let token_index = Arc::new(TokenIndex::new(cache.clone(), forwarder.clone()));
     
     info!("TCP server listening on {}", addr);
     println!("✅ Token Info Server running on {}", addr);
@@ -76,24 +77,20 @@ fn parse_request(input: &str) -> Result<RequestType, String> {
         return Err("Empty request".to_string());
     }
     
-    // First try to parse as JSON
+    // Try to parse as JSON
     if let Ok(json) = serde_json::from_str::<Value>(trimmed) {
-        debug!("Parsed JSON: {}", json);
-        
-        // Check if it's a search request by looking for "type":"search" or "query" field
+        // Check if it's a search request
         let is_search = json.get("type")
             .and_then(|v| v.as_str())
             .map(|t| t == "search")
             .unwrap_or(false);
         
-        // Also treat as search if it has "query" field and no "context"/"address"/"mint"
         let has_query = json.get("query").is_some();
         let has_address_field = json.get("context").is_some() || 
                                 json.get("address").is_some() || 
                                 json.get("mint").is_some();
         
         if is_search || (has_query && !has_address_field) {
-            // Parse as search request
             let query = json.get("query")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing 'query' field in search request")?
@@ -114,7 +111,7 @@ fn parse_request(input: &str) -> Result<RequestType, String> {
             }));
         }
         
-        // Extract address from JSON (for lookup)
+        // Extract address from JSON
         if let Some(context) = json.get("context").and_then(|v| v.as_str()) {
             return Ok(RequestType::Lookup(context.to_string()));
         }
@@ -127,48 +124,9 @@ fn parse_request(input: &str) -> Result<RequestType, String> {
         if let Some(s) = json.as_str() {
             return Ok(RequestType::Lookup(s.to_string()));
         }
-        
-        // If we have a query but no address fields, treat as search
-        if has_query {
-            let query = json.get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            return Ok(RequestType::Search(TokenSearchRequest {
-                query,
-                chain: None,
-                limit: Some(10),
-            }));
-        }
     }
     
-    // Check if input looks like a search command (simple format: "search:BEAVER")
-    if trimmed.starts_with("search:") || trimmed.starts_with("SEARCH:") {
-        let query = trimmed.split(':').nth(1).unwrap_or("").to_string();
-        return Ok(RequestType::Search(TokenSearchRequest {
-            query,
-            chain: None,
-            limit: Some(10),
-        }));
-    }
-    
-    // Check if input looks like a chain-specific search (e.g., "solana:USDC")
-    if trimmed.contains(':') && !trimmed.starts_with("0x") {
-        let parts: Vec<&str> = trimmed.split(':').collect();
-        if parts.len() == 2 {
-            let chain = parts[0].to_string();
-            let query = parts[1].to_string();
-            if ["solana", "ethereum", "bsc"].contains(&chain.as_str()) {
-                return Ok(RequestType::Search(TokenSearchRequest {
-                    query,
-                    chain: Some(chain),
-                    limit: Some(10),
-                }));
-            }
-        }
-    }
-    
-    // Treat as plain address lookup
+    // Treat as plain address
     Ok(RequestType::Lookup(trimmed.to_string()))
 }
 
@@ -234,11 +192,9 @@ async fn handle_connection(
                               conn_id, request_count, search_req.query, search_req.chain, search_req.limit);
                         
                         let limit = search_req.limit.unwrap_or(10);
-                        let results = token_index.search_by_name(
-                            &search_req.query,
-                            search_req.chain.as_deref(),
-                            limit,
-                        ).await;
+                        let results = token_index
+                            .search_by_name(&search_req.query, search_req.chain.as_deref(), limit)
+                            .await;
                         
                         let response = json!({
                             "success": true,

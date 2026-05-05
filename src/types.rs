@@ -30,6 +30,20 @@ pub struct TokenSearchResult {
     pub similarity: Option<f64>,
 }
 
+// TG Command for TCP endpoint
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TgCommand {
+    pub command: String,
+    pub params: TgCommandParams,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TgCommandParams {
+    pub mint: String,
+    pub symbol: Option<String>,
+    pub chain: String,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
     #[error("HTTP request failed: {0}")]
