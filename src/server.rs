@@ -4,11 +4,15 @@ use std::sync::Arc;
 use std::time::Instant;
 use crate::providers::TokenProvider;
 use crate::lookup::lookup_token;
+use crate::cache::PostgresCache;
+use crate::tcp_forwarder::TcpForwarder;
 use tracing::{info, error, debug, warn, trace};
 use serde_json::Value;
 
 pub async fn run_server(
     providers: Vec<Arc<dyn TokenProvider>>,
+    cache: Option<Arc<PostgresCache>>,
+    forwarder: Option<Arc<TcpForwarder>>,
     host: &str,
     port: u16,
 ) -> anyhow::Result<()> {
@@ -18,6 +22,18 @@ pub async fn run_server(
     println!("✅ Token Info Server running on {}", addr);
     println!("📡 Accepting TCP connections...");
     println!("💡 Accepts plain addresses or JSON: {{\"context\":\"address\"}}");
+    
+    if cache.is_some() {
+        println!("💾 PostgreSQL cache enabled");
+    }
+    
+    if let Some(f) = &forwarder {
+        if f.health_check().await {
+            println!("🔗 TCP forwarder connected to endpoint");
+        } else {
+            println!("⚠️  TCP forwarder not connected");
+        }
+    }
 
     let mut connection_id = 0;
     
@@ -27,11 +43,13 @@ pub async fn run_server(
                 connection_id += 1;
                 let conn_id = connection_id;
                 info!("[conn:{}] New TCP connection from: {}", conn_id, client_addr);
-                trace!("[conn:{}] Connection details: {:?}", conn_id, stream);
                 
                 let providers = providers.clone();
+                let cache = cache.clone();
+                let forwarder = forwarder.clone();
+                
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream, providers, conn_id, client_addr).await {
+                    if let Err(e) = handle_connection(stream, providers, cache, forwarder, conn_id, client_addr).await {
                         error!("[conn:{}] Error handling connection: {}", conn_id, e);
                     } else {
                         info!("[conn:{}] Connection closed successfully", conn_id);
@@ -49,14 +67,11 @@ pub async fn run_server(
 }
 
 fn extract_address(input: &str) -> String {
-    // Try to parse as JSON first
     if let Ok(json) = serde_json::from_str::<Value>(input) {
-        // Check for context field
         if let Some(context) = json.get("context").and_then(|v| v.as_str()) {
             trace!("Extracted address from JSON context field: {}", context);
             return context.to_string();
         }
-        // Check for other common field names
         if let Some(address) = json.get("address").and_then(|v| v.as_str()) {
             trace!("Extracted address from JSON address field: {}", address);
             return address.to_string();
@@ -65,7 +80,6 @@ fn extract_address(input: &str) -> String {
             trace!("Extracted address from JSON mint field: {}", mint);
             return mint.to_string();
         }
-        // If JSON but no known fields, return as-is (might be just a string in quotes)
         if let Some(s) = json.as_str() {
             trace!("Extracted address from JSON string: {}", s);
             return s.to_string();
@@ -73,13 +87,14 @@ fn extract_address(input: &str) -> String {
         trace!("JSON detected but no address field found, using raw input");
     }
     
-    // Not JSON or no extractable field, return trimmed input
     input.trim().to_string()
 }
 
 async fn handle_connection(
     mut stream: TcpStream,
     providers: Vec<Arc<dyn TokenProvider>>,
+    cache: Option<Arc<PostgresCache>>,
+    forwarder: Option<Arc<TcpForwarder>>,
     conn_id: u32,
     client_addr: std::net::SocketAddr,
 ) -> anyhow::Result<()> {
@@ -108,17 +123,18 @@ async fn handle_connection(
                 request_count += 1;
                 let request_start = Instant::now();
                 
-                // Extract the actual address from the input (supports JSON)
                 let address = extract_address(raw_input);
                 
                 info!("[conn:{}] 📥 Request #{}: input='{}' -> address='{}'", 
                       conn_id, request_count, raw_input, address);
-                trace!("[conn:{}] Full request line: {:?}", conn_id, line);
                 
-                // Perform token lookup
-                let token_info = lookup_token(&providers, &address).await;
+                let token_info = lookup_token(
+                    &providers, 
+                    &address, 
+                    cache.as_ref().map(|c| c.as_ref()),
+                    forwarder.as_ref().map(|f| f.as_ref()),
+                ).await;
                 
-                // Log the result
                 let response = serde_json::to_string(&token_info)?;
                 let response_size = response.len();
                 
@@ -130,7 +146,6 @@ async fn handle_connection(
                           conn_id, request_count, address, token_info.provider);
                 }
                 
-                // Send response
                 writer.write_all(response.as_bytes()).await?;
                 writer.write_all(b"\n").await?;
                 writer.flush().await?;
@@ -138,7 +153,6 @@ async fn handle_connection(
                 let request_duration = request_start.elapsed();
                 debug!("[conn:{}] Request #{} completed in {:?}, response size: {} bytes", 
                        conn_id, request_count, request_duration, response_size);
-                trace!("[conn:{}] Response body: {}", conn_id, response);
             }
             Err(e) => {
                 error!("[conn:{}] Error reading from connection: {}", conn_id, e);

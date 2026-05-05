@@ -22,11 +22,32 @@ pub struct RpcConfig {
     pub bsc: String,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct DatabaseConfig {
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub username: String,
+    pub password: String,
+    pub max_connections: u32,
+    pub cache_ttl_seconds: i64,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TcpEndpointConfig {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub forward_tokens: bool,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub server: ServerConfig,
     pub logging: LoggingConfig,
     pub rpc: RpcConfig,
+    pub database: DatabaseConfig,
+    pub tcp_endpoint: TcpEndpointConfig,
 }
 
 impl AppConfig {
@@ -37,7 +58,6 @@ impl AppConfig {
     }
     
     pub fn from_env() -> Self {
-        // Fallback to environment variables if TOML not found
         Self {
             server: ServerConfig {
                 host: env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string()),
@@ -53,6 +73,21 @@ impl AppConfig {
                 solana: env::var("SOLANA_RPC").unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string()),
                 ethereum: env::var("ETHEREUM_RPC").unwrap_or_else(|_| "https://eth-mainnet.g.alchemy.com/v2/demo".to_string()),
                 bsc: env::var("BSC_RPC").unwrap_or_else(|_| "https://bsc-dataseed.binance.org".to_string()),
+            },
+            database: DatabaseConfig {
+                host: env::var("DB_HOST").unwrap_or_else(|_| "localhost".to_string()),
+                port: env::var("DB_PORT").unwrap_or_else(|_| "5432".to_string()).parse().unwrap_or(5432),
+                database: env::var("DB_NAME").unwrap_or_else(|_| "token_cache".to_string()),
+                username: env::var("DB_USER").unwrap_or_else(|_| "postgres".to_string()),
+                password: env::var("DB_PASSWORD").unwrap_or_else(|_| "postgres".to_string()),
+                max_connections: env::var("DB_MAX_CONNECTIONS").unwrap_or_else(|_| "10".to_string()).parse().unwrap_or(10),
+                cache_ttl_seconds: env::var("CACHE_TTL_SECONDS").unwrap_or_else(|_| "86400".to_string()).parse().unwrap_or(86400),
+            },
+            tcp_endpoint: TcpEndpointConfig {
+                enabled: env::var("TCP_ENDPOINT_ENABLED").unwrap_or_else(|_| "true".to_string()).parse().unwrap_or(true),
+                host: env::var("TCP_ENDPOINT_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()),
+                port: env::var("TCP_ENDPOINT_PORT").unwrap_or_else(|_| "9003".to_string()).parse().unwrap_or(9003),
+                forward_tokens: env::var("TCP_FORWARD_TOKENS").unwrap_or_else(|_| "true".to_string()).parse().unwrap_or(true),
             },
         }
     }
@@ -71,10 +106,8 @@ impl Config {
     pub fn from_env() -> Self {
         let helius_api_key = env::var("HELIUS_API_KEY").ok();
         
-        // Define provider priorities for each chain
         let mut provider_priorities = HashMap::new();
         
-        // Solana chain providers (higher priority = lower number)
         provider_priorities.insert("solana".to_string(), vec![
             ProviderConfig {
                 name: "metadata-api".to_string(),
@@ -102,7 +135,6 @@ impl Config {
             },
         ]);
         
-        // Ethereum chain providers
         provider_priorities.insert("ethereum".to_string(), vec![
             ProviderConfig {
                 name: "ethereum-known".to_string(),
@@ -118,7 +150,6 @@ impl Config {
             },
         ]);
         
-        // BSC chain providers
         provider_priorities.insert("bsc".to_string(), vec![
             ProviderConfig {
                 name: "bsc-known".to_string(),

@@ -1,16 +1,21 @@
 use std::sync::Arc;
 use crate::providers::TokenProvider;
 use crate::types::TokenInfo;
+use crate::cache::PostgresCache;
+use crate::tcp_forwarder::TcpForwarder;
 use tracing::{info, warn, debug, error};
 
-pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -> TokenInfo {
+pub async fn lookup_token(
+    providers: &[Arc<dyn TokenProvider>], 
+    address: &str,
+    cache: Option<&PostgresCache>,
+    forwarder: Option<&TcpForwarder>,
+) -> TokenInfo {
     info!("Looking up token address: {}", address);
     
-    // First, determine which chain this address belongs to
     let chain = detect_chain(address);
     info!("Detected chain: {}", chain);
     
-    // If chain is unknown, try to detect from address format as fallback
     let chain = if chain == "unknown" {
         if address.starts_with("0x") && address.len() == 42 {
             "ethereum"
@@ -36,13 +41,20 @@ pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -
         };
     }
     
+    // Check cache first if available
+    if let Some(cache) = cache {
+        if let Some(cached_info) = cache.get(address, chain).await {
+            info!("Returning cached token info for {} on {}", address, chain);
+            return cached_info;
+        }
+    }
+    
     // Filter providers that support this address and belong to the detected chain
     let mut relevant_providers: Vec<&Arc<dyn TokenProvider>> = providers
         .iter()
         .filter(|p| p.supports_address(address) && p.chain() == chain)
         .collect();
     
-    // Sort by priority (lower number = higher priority)
     relevant_providers.sort_by_key(|p| p.priority());
     
     if relevant_providers.is_empty() {
@@ -57,21 +69,32 @@ pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -
         };
     }
     
-    // Track the best result we've found
     let mut best_result: Option<TokenInfo> = None;
     
-    // Try providers in priority order
     for provider in relevant_providers {
         debug!("Trying provider {} (priority {})", provider.name(), provider.priority());
         match provider.get_token_info(address).await {
             Ok(info) => {
-                // Check if this provider found a label (token name)
                 if info.label.is_some() {
                     info!("Provider {} returned token WITH label: {:?}", provider.name(), info.label);
+                    
+                    // Cache the result
+                    if let Some(cache) = cache {
+                        if let Err(e) = cache.set(address, chain, &info).await {
+                            warn!("Failed to cache token info: {}", e);
+                        }
+                    }
+                    
+                    // Forward to TCP endpoint if configured
+                    if let Some(forwarder) = forwarder {
+                        if chain == "solana" {
+                            let _ = forwarder.send_token_address(address, chain).await;
+                        }
+                    }
+                    
                     return info;
                 } else {
                     info!("Provider {} returned token WITHOUT name, continuing search...", provider.name());
-                    // Store as best result but continue searching
                     if best_result.is_none() {
                         best_result = Some(info);
                     }
@@ -83,13 +106,17 @@ pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -
         }
     }
     
-    // If we found any result (even without name), return it
     if let Some(result) = best_result {
         warn!("No provider found a token name for {}, returning basic info", address);
+        
+        // Cache the basic info as well
+        if let Some(cache) = cache {
+            let _ = cache.set(address, chain, &result).await;
+        }
+        
         return result;
     }
     
-    // No provider succeeded
     error!("All providers failed for address: {}", address);
     TokenInfo {
         chain: chain.to_string(),
@@ -103,7 +130,7 @@ pub async fn lookup_token(providers: &[Arc<dyn TokenProvider>], address: &str) -
 
 fn detect_chain(address: &str) -> &'static str {
     if address.starts_with("0x") && address.len() == 42 {
-        "ethereum" // Could also be BSC, but they use same format
+        "ethereum"
     } else if address.len() >= 32 && address.len() <= 44 && !address.starts_with("0x") &&
               address.chars().all(|c| c.is_ascii_alphanumeric()) {
         "solana"

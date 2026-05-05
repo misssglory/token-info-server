@@ -1,16 +1,33 @@
 [server]
 host = "127.0.0.1"
-port = 9002 
+port = 9002
 
 [logging]
 level = "debug"
 # Available levels: trace, debug, info, warn, error
-# TCP messages will be logged based on this level
 
 [rpc]
 solana = "https://api.mainnet-beta.solana.com"
 ethereum = "https://eth-mainnet.g.alchemy.com/v2/demo"
 bsc = "https://bsc-dataseed.binance.org"
+
+# Database configuration
+[database]
+host = "localhost"
+port = 5432
+database = "token_cache"
+username = "postgres"
+password = "postgres"
+max_connections = 10
+cache_ttl_seconds = 86400  # 24 hours
+
+# TCP endpoint configuration
+[tcp_endpoint]
+enabled = true
+host = "127.0.0.1"
+port = 1266
+# Optional: send token addresses to this endpoint after caching
+forward_tokens = true
 
 [provider_priorities]
 # Optional: Configure provider priorities per chain
