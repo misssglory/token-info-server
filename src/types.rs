@@ -12,6 +12,24 @@ pub struct TokenInfo {
     pub provider: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TokenSearchRequest {
+    pub query: String,
+    pub chain: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TokenSearchResult {
+    pub address: String,
+    pub chain: String,
+    pub label: String,
+    pub long_label: Option<String>,
+    pub decimals: u8,
+    pub provider: String,
+    pub similarity: Option<f64>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
     #[error("HTTP request failed: {0}")]

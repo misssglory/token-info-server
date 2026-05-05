@@ -1,9 +1,12 @@
-use sqlx::{postgres::{PgPoolOptions, PgConnection}, PgPool, Row};
-use chrono::{DateTime, Utc, Duration};
-use uuid::Uuid;
 use crate::types::TokenInfo;
-use tracing::{info, warn, debug, error};
 use anyhow::Result;
+use chrono::{DateTime, Duration, Utc};
+use sqlx::{
+    postgres::{PgConnection, PgPoolOptions},
+    PgPool, Row,
+};
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
@@ -28,7 +31,7 @@ impl CacheConfig {
             cache_ttl_seconds: config.cache_ttl_seconds,
         }
     }
-    
+
     pub fn connection_string(&self) -> String {
         format!(
             "postgres://{}:{}@{}:{}/{}",
@@ -37,7 +40,7 @@ impl CacheConfig {
     }
 }
 
-#[derive(Debug, Clone)]  // Add Clone derive here
+#[derive(Debug, Clone)] // Add Clone derive here
 pub struct PostgresCache {
     pool: PgPool,
     ttl_seconds: i64,
@@ -46,23 +49,26 @@ pub struct PostgresCache {
 impl PostgresCache {
     pub async fn new(config: CacheConfig) -> Result<Self> {
         info!("Connecting to PostgreSQL database...");
-        
+
         let pool = PgPoolOptions::new()
             .max_connections(config.max_connections)
             .connect(&config.connection_string())
             .await?;
-        
+
         // Run migrations
         Self::init_database(&pool).await?;
-        
-        info!("PostgreSQL cache initialized with TTL: {} seconds", config.cache_ttl_seconds);
-        
+
+        info!(
+            "PostgreSQL cache initialized with TTL: {} seconds",
+            config.cache_ttl_seconds
+        );
+
         Ok(Self {
             pool,
             ttl_seconds: config.cache_ttl_seconds,
         })
     }
-    
+
     async fn init_database(pool: &PgPool) -> Result<()> {
         // Create cache table if not exists
         sqlx::query(
@@ -82,7 +88,7 @@ impl PostgresCache {
         )
         .execute(pool)
         .await?;
-        
+
         // Create index on address and chain
         sqlx::query(
             r#"
@@ -92,7 +98,7 @@ impl PostgresCache {
         )
         .execute(pool)
         .await?;
-        
+
         // Create index on expires_at for cleanup
         sqlx::query(
             r#"
@@ -102,7 +108,7 @@ impl PostgresCache {
         )
         .execute(pool)
         .await?;
-        
+
         // Create stored procedure for cleanup
         sqlx::query(
             r#"
@@ -122,11 +128,11 @@ impl PostgresCache {
         )
         .execute(pool)
         .await?;
-        
+
         info!("Database tables and indexes created successfully");
         Ok(())
     }
-    
+
     pub async fn get(&self, address: &str, chain: &str) -> Option<TokenInfo> {
         let query = sqlx::query(
             r#"
@@ -138,17 +144,19 @@ impl PostgresCache {
         )
         .bind(address)
         .bind(chain);
-        
+
         match query.fetch_optional(&self.pool).await {
             Ok(Some(row)) => {
                 let token_info: serde_json::Value = row.get("token_info");
                 let expires_at: DateTime<Utc> = row.get("expires_at");
                 let hit_count: i64 = row.get("hit_count");
-                
+
                 match serde_json::from_value::<TokenInfo>(token_info) {
                     Ok(info) => {
-                        debug!("Cache hit for {} on {} (hit_count: {}, expires_at: {})", 
-                               address, chain, hit_count, expires_at);
+                        debug!(
+                            "Cache hit for {} on {} (hit_count: {}, expires_at: {})",
+                            address, chain, hit_count, expires_at
+                        );
                         Some(info)
                     }
                     Err(e) => {
@@ -167,11 +175,11 @@ impl PostgresCache {
             }
         }
     }
-    
+
     pub async fn set(&self, address: &str, chain: &str, token_info: &TokenInfo) -> Result<()> {
         let expires_at = Utc::now() + Duration::seconds(self.ttl_seconds);
         let token_info_json = serde_json::to_value(token_info)?;
-        
+
         let query = sqlx::query(
             r#"
             INSERT INTO token_cache (address, chain, token_info, expires_at, updated_at)
@@ -187,14 +195,16 @@ impl PostgresCache {
         .bind(chain)
         .bind(&token_info_json)
         .bind(expires_at);
-        
+
         query.execute(&self.pool).await?;
-        debug!("Cached token info for {} on {} (expires in {} seconds)", 
-               address, chain, self.ttl_seconds);
-        
+        debug!(
+            "Cached token info for {} on {} (expires in {} seconds)",
+            address, chain, self.ttl_seconds
+        );
+
         Ok(())
     }
-    
+
     pub async fn delete(&self, address: &str, chain: &str) -> Result<()> {
         let query = sqlx::query(
             r#"
@@ -204,13 +214,13 @@ impl PostgresCache {
         )
         .bind(address)
         .bind(chain);
-        
+
         query.execute(&self.pool).await?;
         debug!("Deleted cache entry for {} on {}", address, chain);
-        
+
         Ok(())
     }
-    
+
     pub async fn cleanup_expired(&self) -> Result<i64> {
         let result = sqlx::query(
             r#"
@@ -219,16 +229,16 @@ impl PostgresCache {
         )
         .fetch_one(&self.pool)
         .await?;
-        
+
         let deleted_count: i64 = result.get("deleted_count");
-        
+
         if deleted_count > 0 {
             info!("Cleaned up {} expired cache entries", deleted_count);
         }
-        
+
         Ok(deleted_count)
     }
-    
+
     pub async fn get_stats(&self) -> Result<CacheStats> {
         let stats = sqlx::query_as::<_, CacheStatsRow>(
             r#"
@@ -242,13 +252,16 @@ impl PostgresCache {
         )
         .fetch_one(&self.pool)
         .await?;
-        
+
         Ok(CacheStats {
             total_entries: stats.total_entries,
             total_hits: stats.total_hits,
             avg_hits_per_entry: stats.avg_hits_per_entry,
             expired_entries: stats.expired_entries,
         })
+    }
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
     }
 }
 
@@ -267,3 +280,4 @@ struct CacheStatsRow {
     avg_hits_per_entry: f64,
     expired_entries: i64,
 }
+
