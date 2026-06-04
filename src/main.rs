@@ -159,7 +159,11 @@ async fn main() -> anyhow::Result<()> {
         config.solana_rpc.clone(),
         4,
     )));
-
+    // Add to provider initialization
+    providers.push(Arc::new(DexScreenerProvider::new(1)));
+    if let Some(helius_key) = config.helius_api_key {
+        providers.push(Arc::new(HeliusProvider::new(helius_key, 2)));
+    }
     // ETHEREUM PROVIDERS
     providers.push(Arc::new(EthereumProvider::new(
         config.ethereum_rpc.clone(),
@@ -220,4 +224,3 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-

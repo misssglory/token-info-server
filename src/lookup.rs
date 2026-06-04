@@ -38,6 +38,12 @@ pub async fn lookup_token(
             long_label: None,
             decimals: 0,
             provider: "none".to_string(),
+            description: None,
+            image_base64: None,
+            image_url: None,
+            website: None,
+            twitter: None,
+            telegram: None,
         };
     }
     
@@ -66,6 +72,12 @@ pub async fn lookup_token(
             long_label: None,
             decimals: 0,
             provider: "none".to_string(),
+            description: None,
+            image_base64: None,
+            image_url: None,
+            website: None,
+            twitter: None,
+            telegram: None,
         };
     }
     
@@ -125,6 +137,12 @@ pub async fn lookup_token(
         long_label: None,
         decimals: 0,
         provider: "none".to_string(),
+        description: None,
+        image_base64: None,
+        image_url: None,
+        website: None,
+        twitter: None,
+        telegram: None,
     }
 }
 

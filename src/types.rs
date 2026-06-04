@@ -1,5 +1,4 @@
-use serde::{Serialize, Deserialize};
-
+use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TokenInfo {
     pub chain: String,
@@ -10,6 +9,45 @@ pub struct TokenInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub long_label: Option<String>,
     pub provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_base64: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub website: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twitter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub telegram: Option<String>,
+}
+
+// Add a helper method to create basic TokenInfo
+impl TokenInfo {
+    pub fn basic(
+        chain: String,
+        context: String,
+        label: Option<String>,
+        long_label: Option<String>,
+        decimals: u8,
+        provider: String,
+    ) -> Self {
+        Self {
+            chain,
+            context,
+            decimals,
+            label,
+            long_label,
+            provider,
+            description: None,
+            image_base64: None,
+            image_url: None,
+            website: None,
+            twitter: None,
+            telegram: None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

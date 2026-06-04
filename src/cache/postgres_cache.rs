@@ -1,13 +1,13 @@
+use crate::types::TokenInfo;
+use anyhow::Result;
+use chrono::{DateTime, Duration, Utc};
 use sqlx::{
-    postgres::{PgPoolOptions, PgConnection},
+    postgres::{PgConnection, PgPoolOptions},
     PgPool, Row,
 };
-use chrono::{DateTime, Utc, Duration};
-use uuid::Uuid;
-use crate::types::TokenInfo;
-use tracing::{info, warn, debug, error};
-use anyhow::Result;
 use std::str::FromStr;
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
     pub host: String,
@@ -32,8 +32,8 @@ impl CacheConfig {
     }
     pub fn connection_string(&self) -> String {
         format!(
-            "postgres://{}:{}@{}:{}/{}", self.username, self.password, self.host, self
-            .port, self.database
+            "postgres://{}:{}@{}:{}/{}",
+            self.username, self.password, self.host, self.port, self.database
         )
     }
 }
@@ -51,7 +51,8 @@ impl PostgresCache {
             .await?;
         Self::init_database(&pool).await?;
         info!(
-            "PostgreSQL cache initialized with TTL: {} seconds", config.cache_ttl_seconds
+            "PostgreSQL cache initialized with TTL: {} seconds",
+            config.cache_ttl_seconds
         );
         Ok(Self {
             pool,
@@ -60,7 +61,7 @@ impl PostgresCache {
     }
     async fn init_database(pool: &PgPool) -> Result<()> {
         sqlx::query(
-                r#"
+            r#"
             CREATE TABLE IF NOT EXISTS token_cache (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 address TEXT NOT NULL,
@@ -73,27 +74,27 @@ impl PostgresCache {
                 UNIQUE(address, chain)
             )
             "#,
-            )
-            .execute(pool)
-            .await?;
+        )
+        .execute(pool)
+        .await?;
         sqlx::query(
-                r#"
+            r#"
             CREATE INDEX IF NOT EXISTS idx_token_cache_address_chain 
             ON token_cache(address, chain)
             "#,
-            )
-            .execute(pool)
-            .await?;
+        )
+        .execute(pool)
+        .await?;
         sqlx::query(
-                r#"
+            r#"
             CREATE INDEX IF NOT EXISTS idx_token_cache_expires_at 
             ON token_cache(expires_at)
             "#,
-            )
-            .execute(pool)
-            .await?;
+        )
+        .execute(pool)
+        .await?;
         sqlx::query(
-                r#"
+            r#"
             CREATE OR REPLACE FUNCTION cleanup_expired_cache()
             RETURNS INTEGER AS $$
             DECLARE
@@ -107,23 +108,23 @@ impl PostgresCache {
             END;
             $$ LANGUAGE plpgsql;
             "#,
-            )
-            .execute(pool)
-            .await?;
+        )
+        .execute(pool)
+        .await?;
         info!("Database tables and indexes created successfully");
         Ok(())
     }
     pub async fn get(&self, address: &str, chain: &str) -> Option<TokenInfo> {
         let query = sqlx::query(
-                r#"
+            r#"
             UPDATE token_cache 
             SET hit_count = hit_count + 1
             WHERE address = $1 AND chain = $2 AND expires_at > NOW()
             RETURNING token_info, expires_at, hit_count
             "#,
-            )
-            .bind(address)
-            .bind(chain);
+        )
+        .bind(address)
+        .bind(chain);
         match query.fetch_optional(&self.pool).await {
             Ok(Some(row)) => {
                 let token_info: serde_json::Value = row.get("token_info");
@@ -153,16 +154,11 @@ impl PostgresCache {
             }
         }
     }
-    pub async fn set(
-        &self,
-        address: &str,
-        chain: &str,
-        token_info: &TokenInfo,
-    ) -> Result<()> {
+    pub async fn set(&self, address: &str, chain: &str, token_info: &TokenInfo) -> Result<()> {
         let expires_at = Utc::now() + Duration::seconds(self.ttl_seconds);
         let token_info_json = serde_json::to_value(token_info)?;
         let query = sqlx::query(
-                r#"
+            r#"
             INSERT INTO token_cache (address, chain, token_info, expires_at, updated_at)
             VALUES ($1, $2, $3, $4, NOW())
             ON CONFLICT (address, chain) 
@@ -171,27 +167,27 @@ impl PostgresCache {
                 expires_at = EXCLUDED.expires_at,
                 updated_at = NOW()
             "#,
-            )
-            .bind(address)
-            .bind(chain)
-            .bind(&token_info_json)
-            .bind(expires_at);
+        )
+        .bind(address)
+        .bind(chain)
+        .bind(&token_info_json)
+        .bind(expires_at);
         query.execute(&self.pool).await?;
         debug!(
-            "Cached token info for {} on {} (expires in {} seconds)", address, chain,
-            self.ttl_seconds
+            "Cached token info for {} on {} (expires in {} seconds)",
+            address, chain, self.ttl_seconds
         );
         Ok(())
     }
     pub async fn delete(&self, address: &str, chain: &str) -> Result<()> {
         let query = sqlx::query(
-                r#"
+            r#"
             DELETE FROM token_cache
             WHERE address = $1 AND chain = $2
             "#,
-            )
-            .bind(address)
-            .bind(chain);
+        )
+        .bind(address)
+        .bind(chain);
         query.execute(&self.pool).await?;
         debug!("Deleted cache entry for {} on {}", address, chain);
         Ok(())
@@ -209,7 +205,7 @@ impl PostgresCache {
     }
     pub async fn get_stats(&self) -> Result<CacheStats> {
         let row = sqlx::query(
-                r#"
+            r#"
             SELECT 
                 COUNT(*)::BIGINT as total_entries,
                 COALESCE(SUM(hit_count)::BIGINT, 0) as total_hits,
@@ -217,9 +213,9 @@ impl PostgresCache {
                 COUNT(CASE WHEN expires_at < NOW() THEN 1 END)::BIGINT as expired_entries
             FROM token_cache
             "#,
-            )
-            .fetch_one(&self.pool)
-            .await?;
+        )
+        .fetch_one(&self.pool)
+        .await?;
         let total_entries: i64 = row.try_get("total_entries")?;
         let total_hits: i64 = row.try_get("total_hits")?;
         let avg_hits_per_entry: f64 = row.try_get("avg_hits_per_entry")?;

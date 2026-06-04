@@ -1,8 +1,8 @@
-use async_trait::async_trait;
-use std::collections::HashMap;
-use once_cell::sync::Lazy;
-use crate::types::{TokenInfo, ProviderError};
 use crate::providers::TokenProvider;
+use crate::types::{ProviderError, TokenInfo};
+use async_trait::async_trait;
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 
 static KNOWN_BSC_TOKENS: Lazy<HashMap<&'static str, (&'static str, u8)>> = Lazy::new(|| {
     let mut m = HashMap::new();
@@ -30,32 +30,33 @@ impl TokenProvider for BscProvider {
     fn name(&self) -> &str {
         "bsc-known"
     }
-    
+
     fn chain(&self) -> &str {
         "bsc"
     }
-    
+
     fn priority(&self) -> u8 {
         self.priority
     }
-    
+
     fn supports_address(&self, address: &str) -> bool {
-        address.starts_with("0x") && address.len() == 42 &&
-        address[2..].chars().all(|c| c.is_ascii_hexdigit())
+        address.starts_with("0x")
+            && address.len() == 42
+            && address[2..].chars().all(|c| c.is_ascii_hexdigit())
     }
-    
+
     async fn get_token_info(&self, address: &str) -> Result<TokenInfo, ProviderError> {
         if let Some((symbol, decimals)) = KNOWN_BSC_TOKENS.get(address.to_lowercase().as_str()) {
-            return Ok(TokenInfo {
-                chain: self.chain().to_string(),
-                context: address.to_string(),
-                label: Some(symbol.to_string()),
-                long_label: None,
-                decimals: *decimals,
-                provider: self.name().to_string(),
-            });
+            return Ok(TokenInfo::basic(
+                self.chain().to_string(),
+                address.to_string(),
+                Some(symbol.to_string()),
+                None,
+                *decimals,
+                self.name().to_string(),
+            ));
         }
-        
+
         Err(ProviderError::NotFound)
     }
 }
