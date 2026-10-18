@@ -7,7 +7,7 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+    (flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         
@@ -164,7 +164,7 @@ EOF
       {
         # Development shell
         devShells.default = pkgs.mkShell {
-          buildInputs = devDeps;
+          buildInputs = devDeps ++ [ setupScript startServices runMigrations ];
           
           shellHook = ''
             echo "🐚 Entering Token Info Server development shell"
@@ -180,14 +180,14 @@ EOF
             echo "   - DATABASE_URL=${devEnvVars.DATABASE_URL}"
             echo ""
             echo "💡 Quick start:"
-            echo "   1. Run './start-services' to start PostgreSQL"
-            echo "   2. Run './setup-dev' to setup the database"
+            echo "   1. Run 'start-services' to start PostgreSQL"
+            echo "   2. Run 'setup-dev' to setup the database"
             echo "   3. Run 'cargo run' to start the server"
             echo ""
             echo "📚 Available commands:"
-            echo "   - ./setup-dev        - Setup development environment"
-            echo "   - ./start-services   - Start PostgreSQL and check services"
-            echo "   - ./run-migrations   - Run database migrations"
+            echo "   - setup-dev        - Setup development environment"
+            echo "   - start-services   - Start PostgreSQL and check services"
+            echo "   - run-migrations   - Run database migrations"
             echo "   - cargo build        - Build the project"
             echo "   - cargo test         - Run tests"
             echo "   - cargo doc --open   - Generate and open documentation"
@@ -206,7 +206,7 @@ EOF
         
         # Development shell with additional tools
         devShells.dev = pkgs.mkShell {
-          buildInputs = devDeps ++ (with pkgs; [
+          buildInputs = devDeps ++ [ setupScript startServices runMigrations ] ++ (with pkgs; [
             # Additional development tools
             cargo-audit
             cargo-deny
@@ -251,6 +251,7 @@ EOF
           
           cargoLock = {
             lockFile = ./Cargo.lock;
+            allowBuiltinFetchGit = true;
           };
           
           nativeBuildInputs = with pkgs; [
@@ -268,18 +269,8 @@ EOF
           OPENSSL_LIB_DIR = devEnvVars.OPENSSL_LIB_DIR;
           OPENSSL_INCLUDE_DIR = devEnvVars.OPENSSL_INCLUDE_DIR;
           
-          # Set runtime environment
-          RUST_LOG = "info";
-          
-          # Install phase
-          installPhase = ''
-            runHook preInstall
-            mkdir -p $out/bin
-            cp target/release/token-info-server $out/bin/
-            mkdir -p $out/share/doc/token-info-server
-            cp README.md $out/share/doc/token-info-server/ 2>/dev/null || true
-            runHook postInstall
-          '';
+          # TLS certificates are available through the systemd environment.
+          # RUST_LOG = "info";
           
           meta = with pkgs.lib; {
             description = "Token Info Server with PostgreSQL caching";
@@ -315,74 +306,6 @@ EOF
           };
         };
         
-        # Application configuration module for NixOS
-        nixosModules.default = { config, lib, pkgs, ... }: {
-          options.services.token-info-server = {
-            enable = lib.mkEnableOption "Token Info Server";
-            
-            port = lib.mkOption {
-              type = lib.types.port;
-              default = 9002;
-              description = "TCP port to listen on";
-            };
-            
-            host = lib.mkOption {
-              type = lib.types.str;
-              default = "127.0.0.1";
-              description = "Host to bind to";
-            };
-            
-            databaseUrl = lib.mkOption {
-              type = lib.types.str;
-              default = "postgresql://postgres:postgres@localhost:5432/token_cache";
-              description = "PostgreSQL connection URL";
-            };
-            
-            solanaRpc = lib.mkOption {
-              type = lib.types.str;
-              default = "https://api.mainnet-beta.solana.com";
-              description = "Solana RPC endpoint";
-            };
-            
-            logLevel = lib.mkOption {
-              type = lib.types.enum ["trace" "debug" "info" "warn" "error"];
-              default = "info";
-              description = "Log level";
-            };
-          };
-          
-          config = lib.mkIf config.services.token-info-server.enable {
-            systemd.services.token-info-server = {
-              description = "Token Info Server";
-              after = [ "network.target" "postgresql.service" ];
-              wantedBy = [ "multi-user.target" ];
-              
-              serviceConfig = {
-                ExecStart = "${self.packages.${system}.default}/bin/token-info-server";
-                Restart = "always";
-                RestartSec = "5s";
-                User = "token-info";
-                Group = "token-info";
-                Environment = [
-                  "RUST_LOG=${config.services.token-info-server.logLevel}"
-                  "DATABASE_URL=${config.services.token-info-server.databaseUrl}"
-                  "SOLANA_RPC=${config.services.token-info-server.solanaRpc}"
-                  "HOST=${config.services.token-info-server.host}"
-                  "PORT=${toString config.services.token-info-server.port}"
-                ];
-              };
-            };
-            
-            # Create system user
-            users.users.token-info = {
-              isSystemUser = true;
-              group = "token-info";
-              createHome = false;
-            };
-            users.groups.token-info = {};
-          };
-        };
-        
         # Formatter for nix files
         formatter = pkgs.nixfmt-rfc-style;
         
@@ -403,5 +326,5 @@ EOF
           '';
         };
       }
-    );
+    ));
 }
