@@ -54,3 +54,9 @@ once_cell = "1.21.4"
 toml = "1.1.2"
 spl-token-metadata-interface = "1.0.0"
 base64 = "0.22.1"
+
+[patch.crates-io]
+spl-token-2022-interface = {
+    git = "https://github.com/misssglory/token-2022.git",
+    rev = "3a4fc0cc5a18ce9797075959cca3ad1f7e4c3b5c"
+}
