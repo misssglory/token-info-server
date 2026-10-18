@@ -249,10 +249,11 @@ EOF
           
           src = ./.;
           
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            allowBuiltinFetchGit = true;
-          };
+          # cargoLock = {
+          #   lockFile = ./Cargo.lock;
+          #   allowBuiltinFetchGit = true;
+          # };
+          cargoHash = "sha256-nOks+0NM7qENWzWbFQQ94BY4XRENpgknc75cbUcT8Dg=";
           
           nativeBuildInputs = with pkgs; [
             pkg-config
