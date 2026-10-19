@@ -66,7 +66,7 @@ pub async fn run_server(
 
 #[derive(Debug)]
 enum RequestType {
-    Lookup(String),
+    Lookup(String, Option<String>),
     Search(TokenSearchRequest),
 }
 
@@ -111,23 +111,25 @@ fn parse_request(input: &str) -> Result<RequestType, String> {
             }));
         }
         
+        // Optional chain override for EVM address ambiguity.
+        let chain = json.get("chain").and_then(|v| v.as_str()).map(str::to_owned);
         // Extract address from JSON
         if let Some(context) = json.get("context").and_then(|v| v.as_str()) {
-            return Ok(RequestType::Lookup(context.to_string()));
+            return Ok(RequestType::Lookup(context.to_string(), chain));
         }
         if let Some(address) = json.get("address").and_then(|v| v.as_str()) {
-            return Ok(RequestType::Lookup(address.to_string()));
+            return Ok(RequestType::Lookup(address.to_string(), chain));
         }
         if let Some(mint) = json.get("mint").and_then(|v| v.as_str()) {
-            return Ok(RequestType::Lookup(mint.to_string()));
+            return Ok(RequestType::Lookup(mint.to_string(), chain));
         }
         if let Some(s) = json.as_str() {
-            return Ok(RequestType::Lookup(s.to_string()));
+            return Ok(RequestType::Lookup(s.to_string(), chain));
         }
     }
     
     // Treat as plain address
-    Ok(RequestType::Lookup(trimmed.to_string()))
+    Ok(RequestType::Lookup(trimmed.to_string(), None))
 }
 
 async fn handle_connection(
@@ -165,13 +167,14 @@ async fn handle_connection(
                 let request_start = Instant::now();
                 
                 match parse_request(raw_input) {
-                    Ok(RequestType::Lookup(address)) => {
+                    Ok(RequestType::Lookup(address, chain)) => {
                         info!("[conn:{}] 📥 Lookup request #{}: address='{}'", 
                               conn_id, request_count, address);
                         
                         let token_info = lookup_token(
                             &providers, 
                             &address,
+                            chain.as_deref(),
                             cache.as_ref().map(|c| c.as_ref()),
                             forwarder.as_ref().map(|f| f.as_ref()),
                         ).await;

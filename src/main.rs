@@ -43,6 +43,10 @@ struct Cli {
     #[arg(long, default_value = "config.toml")]
     config: String,
 
+    /// Force chain (solana, ethereum, bsc, robinhood); otherwise auto-detect
+    #[arg(long)]
+    chain: Option<String>,
+
     /// Skip cache for this lookup
     #[arg(long)]
     no_cache: bool,
@@ -173,6 +177,11 @@ async fn main() -> anyhow::Result<()> {
     // BSC PROVIDERS
     providers.push(Arc::new(BscProvider::new(config.bsc_rpc.clone(), 1)));
 
+    // On-chain ERC-20 metadata for all EVM networks.
+    providers.push(Arc::new(EvmRpcProvider::new("robinhood", config.robinhood_rpc.clone(), 1)));
+    providers.push(Arc::new(EvmRpcProvider::new("ethereum", config.ethereum_rpc.clone(), 3)));
+    providers.push(Arc::new(EvmRpcProvider::new("bsc", config.bsc_rpc.clone(), 3)));
+
     info!("Initialized {} providers", providers.len());
 
     // Print cache stats if available
@@ -196,6 +205,7 @@ async fn main() -> anyhow::Result<()> {
         let token_info = lookup_token(
             &providers,
             &address,
+            cli.chain.as_deref(),
             cache.as_ref().map(|c| c.as_ref()),
             forwarder.as_ref().map(|f| f.as_ref()),
         )

@@ -10,6 +10,7 @@ level = "debug"
 solana = "https://api.mainnet-beta.solana.com"
 ethereum = "https://eth-mainnet.g.alchemy.com/v2/demo"
 bsc = "https://bsc-dataseed.binance.org"
+robinhood = "https://rpc.mainnet.chain.robinhood.com"
 
 # Database configuration
 [database]

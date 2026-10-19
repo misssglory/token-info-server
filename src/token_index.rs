@@ -65,7 +65,7 @@ impl TokenIndex {
         let chains_to_search: Vec<String> = if let Some(chain) = chain {
             vec![chain.to_string()]
         } else {
-            vec!["solana".to_string(), "ethereum".to_string(), "bsc".to_string()]
+            vec!["solana".to_string(), "ethereum".to_string(), "bsc".to_string(), "robinhood".to_string()]
         };
         
         for chain_name in chains_to_search.iter() {

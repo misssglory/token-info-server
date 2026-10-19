@@ -20,6 +20,8 @@ pub struct RpcConfig {
     pub solana: String,
     pub ethereum: String,
     pub bsc: String,
+    #[serde(default = "default_robinhood_rpc")]
+    pub robinhood: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -50,6 +52,8 @@ pub struct AppConfig {
     pub tcp_endpoint: TcpEndpointConfig,
 }
 
+fn default_robinhood_rpc() -> String { "https://rpc.mainnet.chain.robinhood.com".to_string() }
+
 impl AppConfig {
     pub fn from_file(path: &str) -> anyhow::Result<Self> {
         let contents = fs::read_to_string(path)?;
@@ -73,6 +77,7 @@ impl AppConfig {
                 solana: env::var("SOLANA_RPC").unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string()),
                 ethereum: env::var("ETHEREUM_RPC").unwrap_or_else(|_| "https://eth-mainnet.g.alchemy.com/v2/demo".to_string()),
                 bsc: env::var("BSC_RPC").unwrap_or_else(|_| "https://bsc-dataseed.binance.org".to_string()),
+                robinhood: env::var("ROBINHOOD_RPC").unwrap_or_else(|_| default_robinhood_rpc()),
             },
             database: DatabaseConfig {
                 host: env::var("DB_HOST").unwrap_or_else(|_| "localhost".to_string()),
@@ -98,6 +103,7 @@ pub struct Config {
     pub solana_rpc: String,
     pub ethereum_rpc: String,
     pub bsc_rpc: String,
+    pub robinhood_rpc: String,
     pub helius_api_key: Option<String>,
     pub provider_priorities: HashMap<String, Vec<ProviderConfig>>,
 }
@@ -169,6 +175,7 @@ impl Config {
             solana_rpc: env::var("SOLANA_RPC").unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string()),
             ethereum_rpc: env::var("ETHEREUM_RPC").unwrap_or_else(|_| "https://eth-mainnet.g.alchemy.com/v2/demo".to_string()),
             bsc_rpc: env::var("BSC_RPC").unwrap_or_else(|_| "https://bsc-dataseed.binance.org".to_string()),
+            robinhood_rpc: env::var("ROBINHOOD_RPC").unwrap_or_else(|_| default_robinhood_rpc()),
             helius_api_key,
             provider_priorities,
         }
