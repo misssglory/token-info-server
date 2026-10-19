@@ -253,7 +253,7 @@ EOF
           #   lockFile = ./Cargo.lock;
           #   allowBuiltinFetchGit = true;
           # };
-          cargoHash = "sha256-nOks+0NM7qENWzWbFQQ94BY4XRENpgknc75cbUcT8Dg=";
+          cargoHash = pkgs.lib.fakeHash; # Replace with actual got: hash after Rustls feature change
           
           nativeBuildInputs = with pkgs; [
             pkg-config

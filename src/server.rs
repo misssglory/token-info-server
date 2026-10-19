@@ -25,12 +25,12 @@ pub async fn run_server(
     let token_index = Arc::new(TokenIndex::new(cache.clone(), forwarder.clone()));
     
     info!("TCP server listening on {}", addr);
-    println!("✅ Token Info Server running on {}", addr);
-    println!("📡 Accepting TCP connections...");
-    println!("💡 Accepts:");
-    println!("   - Plain addresses: 'So111...'");
-    println!("   - JSON lookup: {{\"context\":\"address\"}}");
-    println!("   - JSON search: {{\"type\":\"search\",\"query\":\"BEAVER\",\"limit\":5}}");
+    info!("✅ Token Info Server running on {}", addr);
+    info!("📡 Accepting TCP connections...");
+    info!("💡 Accepts:");
+    info!("   - Plain addresses: 'So111...'");
+    info!("   - JSON lookup: {{\"context\":\"address\"}}");
+    info!("   - JSON search: {{\"type\":\"search\",\"query\":\"BEAVER\",\"limit\":5}}");
 
     let mut connection_id = 0;
     
@@ -178,7 +178,22 @@ async fn handle_connection(
                             cache.as_ref().map(|c| c.as_ref()),
                             forwarder.as_ref().map(|f| f.as_ref()),
                         ).await;
-                        
+
+                        // A DB failure must not be disguised as a cache miss and
+                        // must not produce an accidental provider request.
+                        let token_info = match token_info {
+                            Ok(info) => info,
+                            Err(e) => {
+                                let response = json!({
+                                    "success": false,
+                                    "error": format!("cache lookup failed: {e:#}")
+                                });
+                                writer.write_all(serde_json::to_string(&response)?.as_bytes()).await?;
+                                writer.write_all(b"\n").await?;
+                                writer.flush().await?;
+                                continue;
+                            }
+                        };
                         let response = serde_json::to_string(&token_info)?;
                         
                         if let Some(label) = &token_info.label {

@@ -84,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
 
     fmt()
         .with_env_filter(filter)
+        .with_writer(std::io::stderr)
         .with_target(false)
         .with_thread_ids(false)
         .with_level(true)
@@ -97,30 +98,20 @@ async fn main() -> anyhow::Result<()> {
     // Initialize PostgreSQL cache
     let cache = if !cli.no_cache {
         let cache_config = CacheConfig::from_config(&app_config.database);
-        match PostgresCache::new(cache_config).await {
-            Ok(c) => {
-                info!("PostgreSQL cache initialized successfully");
-
-                // Start background cleanup task - c is already owned, no need to clone
-                let cache_for_cleanup = c.clone(); // Now Clone is derived
-                tokio::spawn(async move {
-                    let mut interval =
-                        tokio::time::interval(tokio::time::Duration::from_secs(3600));
-                    loop {
-                        interval.tick().await;
-                        if let Err(e) = cache_for_cleanup.cleanup_expired().await {
-                            error!("Cache cleanup failed: {}", e);
-                        }
-                    }
-                });
-
-                Some(Arc::new(c))
+        let c = PostgresCache::new(cache_config).await
+            .map_err(|e| anyhow::anyhow!("Cache enabled but PostgreSQL initialization failed: {e:#}. Use --no-cache to explicitly bypass it"))?;
+        info!("PostgreSQL cache initialized successfully");
+        let cache_for_cleanup = c.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+            loop {
+                interval.tick().await;
+                if let Err(e) = cache_for_cleanup.cleanup_expired().await {
+                    error!("Cache cleanup failed: {}", e);
+                }
             }
-            Err(e) => {
-                error!("Failed to initialize PostgreSQL cache: {}", e);
-                None
-            }
-        }
+        });
+        Some(Arc::new(c))
     } else {
         info!("Cache disabled via CLI flag");
         None
@@ -209,7 +200,7 @@ async fn main() -> anyhow::Result<()> {
             cache.as_ref().map(|c| c.as_ref()),
             forwarder.as_ref().map(|f| f.as_ref()),
         )
-        .await;
+        .await?;
         let json = serde_json::to_string_pretty(&token_info)?;
         println!("{}", json);
 

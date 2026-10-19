@@ -114,7 +114,7 @@ impl PostgresCache {
         info!("Database tables and indexes created successfully");
         Ok(())
     }
-    pub async fn get(&self, address: &str, chain: &str) -> Option<TokenInfo> {
+    pub async fn get(&self, address: &str, chain: &str) -> Result<Option<TokenInfo>> {
         let query = sqlx::query(
             r#"
             UPDATE token_cache 
@@ -136,21 +136,21 @@ impl PostgresCache {
                             "Cache hit for {} on {} (hit_count: {}, expires_at: {})",
                             address, chain, hit_count, expires_at
                         );
-                        Some(info)
+                        Ok(Some(info))
                     }
                     Err(e) => {
                         error!("Failed to deserialize cached token info: {}", e);
-                        None
+                        Err(e.into())
                     }
                 }
             }
             Ok(None) => {
                 debug!("Cache miss for {} on {}", address, chain);
-                None
+                Ok(None)
             }
             Err(e) => {
                 error!("Database error during cache lookup: {}", e);
-                None
+                Err(e.into())
             }
         }
     }

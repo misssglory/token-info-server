@@ -12,7 +12,8 @@ Chains: auto (default), solana, ethereum, bsc, robinhood
 
 Options:
   -c, --chain CHAIN     Override automatic chain detection
-  --cache               Enable the PostgreSQL cache (disabled by default)
+  --cache               Use PostgreSQL (default)
+  --no-cache            Bypass PostgreSQL and query providers directly
   -v, --verbose         Enable verbose application logging
   -h, --help            Show usage
 
@@ -28,7 +29,7 @@ EOF
 
 chain=auto
 address=''
-use_cache=false
+use_cache=true
 verbose=false
 while (($#)); do
   case "$1" in
@@ -37,6 +38,7 @@ while (($#)); do
       chain="${2,,}"; shift 2 ;;
     --chain=*) chain="${1#*=}"; chain="${chain,,}"; shift ;;
     --cache) use_cache=true; shift ;;
+    --no-cache) use_cache=false; shift ;;
     -v|--verbose) verbose=true; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
@@ -78,4 +80,4 @@ args+=("$address")
 
 # CLI testing should not try to connect to the TCP forwarder by default.
 export TCP_ENDPOINT_ENABLED=false
-exec cargo run --release -- "${args[@]}"
+exec cargo run --quiet --release -- "${args[@]}"

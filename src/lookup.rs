@@ -4,6 +4,7 @@ use crate::types::TokenInfo;
 use crate::cache::PostgresCache;
 use crate::tcp_forwarder::TcpForwarder;
 use tracing::{info, warn, debug};
+use anyhow::Result;
 
 fn blank(chain: &str, address: &str) -> TokenInfo {
     TokenInfo::basic(chain.into(), address.into(), None, None, 0, "none".into())
@@ -23,30 +24,34 @@ pub async fn lookup_token(
     chain_hint: Option<&str>,
     cache: Option<&PostgresCache>,
     forwarder: Option<&TcpForwarder>,
-) -> TokenInfo {
+) -> Result<TokenInfo> {
     let chain_hint = chain_hint.map(|s| s.to_ascii_lowercase());
     let chains: Vec<&str> = match chain_hint.as_deref() {
         Some("robinhood" | "robinhood-chain" | "4663") if is_evm(address) => vec!["robinhood"],
         Some("ethereum" | "eth" | "1") if is_evm(address) => vec!["ethereum"],
         Some("bsc" | "bnb" | "56") if is_evm(address) => vec!["bsc"],
         Some("solana") if is_solana(address) => vec!["solana"],
-        Some(_) => return blank("unknown", address),
+        Some(_) => return Ok(blank("unknown", address)),
         None if is_solana(address) => vec!["solana"],
         // There is no unique chain encoded in an EVM address. Probe networks.
         // Prefer Robinhood for previously unseen 0x addresses.
         None if is_evm(address) => vec!["robinhood", "ethereum", "bsc"],
-        None => return blank("unknown", address),
+        None => return Ok(blank("unknown", address)),
     };
     let explicit = chain_hint.is_some();
-    for chain in &chains {
-        if let Some(cache) = cache {
-            if let Some(cached) = cache.get(address, chain).await {
+    // Cache-first across *all* candidate chains, before any provider/RPC call.
+    // Otherwise an auto lookup probes Robinhood even if Ethereum/BSC is cached.
+    if let Some(cache) = cache {
+        for chain in &chains {
+            if let Some(cached) = cache.get(address, chain).await? {
                 if cached.label.is_some() || cached.long_label.is_some() {
-                    info!("Cached token {} on {}", address, chain);
-                    return cached;
+                    info!("Cache hit for {} on {} (no RPC)", address, chain);
+                    return Ok(cached);
                 }
             }
         }
+    }
+    for chain in &chains {
         let mut candidates: Vec<_> = providers.iter()
             .filter(|p| p.chain() == *chain && p.supports_address(address))
             .collect();
@@ -66,7 +71,7 @@ pub async fn lookup_token(
                             let _ = forwarder.send_token_address(address, chain).await;
                         }
                     }
-                    return result;
+                    return Ok(result);
                 },
                 Ok(_) => debug!("{} did not identify {}", provider.name(), address),
                 Err(e) => debug!("{} lookup failed: {}", provider.name(), e),
@@ -74,7 +79,7 @@ pub async fn lookup_token(
         }
     }
     // Never guess that an unknown EVM contract belongs to Ethereum.
-    blank(if explicit { chains[0] } else { "unknown" }, address)
+    Ok(blank(if explicit { chains[0] } else { "unknown" }, address))
 }
 
 #[cfg(test)]

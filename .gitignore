@@ -1,8 +1,6 @@
+/.env
 /target/
-.env
-*.log
-*.pid
+/result
+/result-*
 *.bkp
-result
-
 
