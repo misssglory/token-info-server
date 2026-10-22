@@ -3,4 +3,5 @@
 /result
 /result-*
 *.bkp
+.env
 

@@ -14,6 +14,7 @@ Options:
   -c, --chain CHAIN     Override automatic chain detection
   --cache               Use PostgreSQL (default)
   --no-cache            Bypass PostgreSQL and query providers directly
+  --sources             Include raw verified Solidity source files in JSON
   -v, --verbose         Enable verbose application logging
   -h, --help            Show usage
 
@@ -31,6 +32,7 @@ chain=auto
 address=''
 use_cache=true
 verbose=false
+sources=false
 while (($#)); do
   case "$1" in
     -c|--chain)
@@ -40,6 +42,7 @@ while (($#)); do
     --cache) use_cache=true; shift ;;
     --no-cache) use_cache=false; shift ;;
     -v|--verbose) verbose=true; shift ;;
+    --sources) sources=true; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
     -*) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -75,6 +78,7 @@ command -v cargo >/dev/null || { echo 'Cargo not found. Run nix develop first.' 
 args=(--config /dev/null)
 if [[ "$use_cache" != true ]]; then args+=(--no-cache); fi
 if [[ "$verbose" == true ]]; then args+=(--verbose); fi
+if [[ "$sources" == true ]]; then args+=(--sources); fi
 if [[ "$chain" != auto ]]; then args+=(--chain "$chain"); fi
 args+=("$address")
 

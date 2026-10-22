@@ -111,6 +111,15 @@ impl PostgresCache {
         )
         .execute(pool)
         .await?;
+        sqlx::query(r#"
+            CREATE TABLE IF NOT EXISTS token_contract_sources (
+              chain TEXT NOT NULL, address TEXT NOT NULL,
+              codec TEXT NOT NULL DEFAULT 'zstd',
+              compressed BYTEA NOT NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              PRIMARY KEY (chain,address)
+            )
+        "#).execute(pool).await?;
         info!("Database tables and indexes created successfully");
         Ok(())
     }
@@ -177,6 +186,21 @@ impl PostgresCache {
             "Cached token info for {} on {} (expires in {} seconds)",
             address, chain, self.ttl_seconds
         );
+        Ok(())
+    }
+    /// Separate, non-expiring source cache. It is not removed by token metadata TTL cleanup.
+    pub async fn get_sources(&self, address: &str, chain: &str) -> Result<Option<Vec<u8>>> {
+        let row = sqlx::query("SELECT compressed,codec FROM token_contract_sources WHERE address=$1 AND chain=$2")
+            .bind(address.to_ascii_lowercase()).bind(chain).fetch_optional(&self.pool).await?;
+        if let Some(row) = row {
+            let codec: String = row.try_get("codec")?;
+            if codec != "zstd" { anyhow::bail!("Unsupported source codec: {codec}"); }
+            Ok(Some(row.try_get("compressed")?))
+        } else { Ok(None) }
+    }
+    pub async fn set_sources(&self, address: &str, chain: &str, bytes: Vec<u8>) -> Result<()> {
+        sqlx::query("INSERT INTO token_contract_sources(chain,address,compressed) VALUES ($1,$2,$3) ON CONFLICT(chain,address) DO UPDATE SET compressed=EXCLUDED.compressed, created_at=NOW()")
+            .bind(chain).bind(address.to_ascii_lowercase()).bind(bytes).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn delete(&self, address: &str, chain: &str) -> Result<()> {

@@ -3056,6 +3056,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -6282,6 +6283,7 @@ dependencies = [
  "futures",
  "hex",
  "once_cell",
+ "regex",
  "reqwest 0.13.3",
  "serde",
  "serde_json",
@@ -6307,6 +6309,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "zstd",
 ]
 
 [[package]]

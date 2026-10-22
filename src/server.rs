@@ -68,6 +68,7 @@ pub async fn run_server(
 enum RequestType {
     Lookup(String, Option<String>),
     Search(TokenSearchRequest),
+    Sources(String, Option<String>),
 }
 
 fn parse_request(input: &str) -> Result<RequestType, String> {
@@ -79,6 +80,12 @@ fn parse_request(input: &str) -> Result<RequestType, String> {
     
     // Try to parse as JSON
     if let Ok(json) = serde_json::from_str::<Value>(trimmed) {
+        if json.get("type").and_then(|v| v.as_str()) == Some("sources") {
+            let address = json.get("context").or_else(|| json.get("address"))
+                .and_then(|v| v.as_str()).ok_or("Missing address for sources")?;
+            let chain = json.get("chain").and_then(|v| v.as_str()).map(str::to_owned);
+            return Ok(RequestType::Sources(address.to_owned(), chain));
+        }
         // Check if it's a search request
         let is_search = json.get("type")
             .and_then(|v| v.as_str())
@@ -194,7 +201,8 @@ async fn handle_connection(
                                 continue;
                             }
                         };
-                        let response = serde_json::to_string(&token_info)?;
+                        let enriched = crate::source_service::enrich(&token_info, cache.as_deref(), false).await;
+                        let response = serde_json::to_string(&enriched)?;
                         
                         if let Some(label) = &token_info.label {
                             info!("[conn:{}] ✓ Found: '{}'", conn_id, label);
@@ -203,6 +211,16 @@ async fn handle_connection(
                         }
                         
                         writer.write_all(response.as_bytes()).await?;
+                        writer.write_all(b"\n").await?;
+                    }
+                    Ok(RequestType::Sources(address, chain)) => {
+                        let info = lookup_token(&providers, &address, chain.as_deref(),
+                            cache.as_deref(), forwarder.as_deref()).await;
+                        let response = match info {
+                            Ok(token) => crate::source_service::enrich(&token, cache.as_deref(), true).await,
+                            Err(e) => json!({"error": format!("lookup failed: {e:#}")}),
+                        };
+                        writer.write_all(serde_json::to_string(&response)?.as_bytes()).await?;
                         writer.write_all(b"\n").await?;
                     }
                     Ok(RequestType::Search(search_req)) => {

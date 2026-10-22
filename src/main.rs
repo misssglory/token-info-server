@@ -6,6 +6,9 @@ mod server;
 mod tcp_forwarder;
 mod token_index;
 mod types;
+mod source_fetch;
+mod source_scan;
+mod source_service;
 
 use crate::cache::PostgresCache;
 use crate::lookup::lookup_token;
@@ -50,6 +53,10 @@ struct Cli {
     /// Skip cache for this lookup
     #[arg(long)]
     no_cache: bool,
+
+    /// Return the verified contract sources and filename list (EVM)
+    #[arg(long)]
+    sources: bool,
 }
 
 #[tokio::main]
@@ -201,7 +208,8 @@ async fn main() -> anyhow::Result<()> {
             forwarder.as_ref().map(|f| f.as_ref()),
         )
         .await?;
-        let json = serde_json::to_string_pretty(&token_info)?;
+        let output = crate::source_service::enrich(&token_info, cache.as_deref(), cli.sources).await;
+        let json = serde_json::to_string_pretty(&output)?;
         println!("{}", json);
 
         if let Some(label) = &token_info.label {
