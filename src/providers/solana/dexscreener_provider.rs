@@ -83,6 +83,8 @@ impl TokenProvider for DexScreenerProvider {
                 website: None,
                 twitter: None,
                 telegram: None,
+                og: None, market_cap_usd: None, market_cap_text: None,
+                developer_name: None, developer_id: None, developer_profile: None,
                 decimals: 6, // Default, will be overridden by other providers
                 provider: self.name().to_string(),
             });

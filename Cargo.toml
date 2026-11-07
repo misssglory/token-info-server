@@ -1,6 +1,6 @@
 [package]
 name = "token-info-server"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -62,3 +62,6 @@ base64 = "0.22.1"
 # Source scanning and persistent high-ratio compression
 regex = "1.12"
 zstd = "0.13"
+
+# Local Pons watcher subscription (no TLS needed for localhost ws://)
+tokio-tungstenite = "0.26"

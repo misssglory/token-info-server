@@ -81,6 +81,8 @@ impl HeliusProvider {
                                 website,
                                 twitter,
                                 telegram,
+                                og: None, market_cap_usd: None, market_cap_text: None,
+                                developer_name: None, developer_id: None, developer_profile: None,
                                 decimals,
                                 provider: "helius".to_string(),
                             });

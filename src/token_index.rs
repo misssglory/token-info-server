@@ -90,6 +90,7 @@ impl TokenIndex {
                             decimals: *decimals,
                             provider: "known-tokens".to_string(),
                             similarity: Some(similarity),
+                            og: None, market_cap_usd: None, developer_name: None,
                         });
                     }
                 }
@@ -114,13 +115,14 @@ impl TokenIndex {
             let sim_a = a.similarity.unwrap_or(0.0);
             let sim_b = b.similarity.unwrap_or(0.0);
             sim_b.partial_cmp(&sim_a).unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.og.is_some().cmp(&a.og.is_some()))
         });
         
         let mut unique_results = Vec::new();
         let mut seen_addresses = std::collections::HashSet::new();
         for result in results {
-            if !seen_addresses.contains(&result.address) {
-                seen_addresses.insert(result.address.clone());
+            if !seen_addresses.contains(&(result.chain.clone(), result.address.clone())) {
+                seen_addresses.insert((result.chain.clone(), result.address.clone()));
                 unique_results.push(result);
             }
         }
@@ -142,18 +144,17 @@ impl TokenIndex {
             if let Some(forwarder) = &self.forwarder {
                 info!("📡 Forwarder is configured");
                 
-                match forwarder.send_tg_command(
-                    &token.address,
-                    &token.label,
-                    &token.chain,
-                ).await {
-                    Ok(_) => {
-                        info!("✅ TG command sent successfully for token {}", token.label);
+                // Preserve legacy notification behavior without blocking indexed search.
+                let forwarder = forwarder.clone();
+                let address = token.address.clone();
+                let label = token.label.clone();
+                let chain = token.chain.clone();
+                tokio::spawn(async move {
+                    match forwarder.send_tg_command(&address, &label, &chain).await {
+                        Ok(_) => info!("✅ TG command sent for {}", label),
+                        Err(e) => error!("❌ TG command failed for {}: {}", address, e),
                     }
-                    Err(e) => {
-                        error!("❌ Failed to send TG command for {}: {}", token.address, e);
-                    }
-                }
+                });
             } else {
                 warn!("⚠️ No forwarder configured! TG command not sent");
                 warn!("   Check config.toml: tcp_endpoint.enabled = true");
@@ -179,47 +180,11 @@ impl TokenIndex {
             None => return Ok(vec![]),
         };
         
-        let pool = cache.pool();
-        let query_lower = query.to_lowercase();
-        
-        let sql = r#"
-            SELECT address, chain, token_info
-            FROM token_cache
-            WHERE token_info->>'label' ILIKE $1
-               OR token_info->>'long_label' ILIKE $1
-            LIMIT $2
-        "#;
-        
-        let search_pattern = format!("%{}%", query_lower);
-        
-        let rows = sqlx::query_as::<_, (String, String, serde_json::Value)>(sql)
-            .bind(&search_pattern)
-            .bind(limit as i32)
-            .fetch_all(pool)
-            .await?;
-        
-        let mut results = Vec::new();
-        for (address, chain_name, token_info_json) in rows {
-            if let Ok(token_info) = serde_json::from_value::<TokenInfo>(token_info_json) {
-                if let Some(label) = token_info.label {
-                    let similarity = self.calculate_similarity(&label.to_lowercase(), &query_lower);
-                    
-                    results.push(TokenSearchResult {
-                        address,
-                        chain: chain_name,
-                        label: label.clone(),
-                        long_label: token_info.long_label,
-                        decimals: token_info.decimals,
-                        provider: token_info.provider,
-                        similarity: Some(similarity),
-                    });
-                }
-            }
-        }
-        
-        Ok(results)
+        crate::token_registry::search(cache.pool(), query, chain, limit)
+            .await
+            .map_err(|e| sqlx::Error::Protocol(format!("registry search failed: {e}")))
     }
-    
+
     fn calculate_similarity(&self, s1: &str, s2: &str) -> f64 {
         if s1.is_empty() || s2.is_empty() {
             return 0.0;

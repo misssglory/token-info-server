@@ -21,6 +21,18 @@ pub struct TokenInfo {
     pub twitter: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub telegram: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub og: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub market_cap_usd: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub market_cap_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub developer_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub developer_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub developer_profile: Option<String>,
 }
 
 // Add a helper method to create basic TokenInfo
@@ -46,6 +58,12 @@ impl TokenInfo {
             website: None,
             twitter: None,
             telegram: None,
+            og: None,
+            market_cap_usd: None,
+            market_cap_text: None,
+            developer_name: None,
+            developer_id: None,
+            developer_profile: None,
         }
     }
 }
@@ -66,6 +84,12 @@ pub struct TokenSearchResult {
     pub decimals: u8,
     pub provider: String,
     pub similarity: Option<f64>,
+    #[serde(default)]
+    pub og: Option<bool>,
+    #[serde(default)]
+    pub market_cap_usd: Option<f64>,
+    #[serde(default)]
+    pub developer_name: Option<String>,
 }
 
 // TG Command for TCP endpoint

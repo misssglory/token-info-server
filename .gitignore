@@ -1,7 +1,5 @@
-/.env
-/target/
-/result
-/result-*
-*.bkp
 .env
-
+Cargo.lock.bak
+target/
+result
+*.log

@@ -245,7 +245,7 @@ EOF
         # Production build environment
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "token-info-server";
-          version = "0.1.0";
+          version = "0.2.0";
           
           src = ./.;
           
@@ -253,7 +253,7 @@ EOF
           #   lockFile = ./Cargo.lock;
           #   allowBuiltinFetchGit = true;
           # };
-          cargoHash = "sha256-v83n0FdTMy6vhNqTQK1ZKZ8hmWKt1K8aUW//hVbsOgc=";
+          cargoHash = "sha256-E3Szc/mX+Yh3yisv+qpUY5N9qB12Q4wLCLl0Atk7b4g="; # Update from first nix build hash mismatch (dependencies changed)
           
           nativeBuildInputs = with pkgs; [
             pkg-config

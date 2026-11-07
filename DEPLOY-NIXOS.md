@@ -1,3 +1,5 @@
+> For Pons watcher, registry indexes, OG, and async enrichment see [PONS-INTEGRATION.md](PONS-INTEGRATION.md).
+
 # Token Info Server — NixOS deployment
 
 ## Local test

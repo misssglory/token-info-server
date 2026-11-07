@@ -44,12 +44,26 @@ pub struct TcpEndpointConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct PonsWatcherConfig {
+    pub enabled: bool,
+    pub url: String,
+}
+impl Default for PonsWatcherConfig {
+    fn default() -> Self {
+        Self { enabled: false, url: "ws://127.0.0.1:8765/subscribe".into() }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub server: ServerConfig,
     pub logging: LoggingConfig,
     pub rpc: RpcConfig,
     pub database: DatabaseConfig,
     pub tcp_endpoint: TcpEndpointConfig,
+    #[serde(default)]
+    pub pons_watcher: PonsWatcherConfig,
 }
 
 fn default_robinhood_rpc() -> String { "https://rpc.mainnet.chain.robinhood.com".to_string() }
@@ -87,6 +101,10 @@ impl AppConfig {
                 password: env::var("DB_PASSWORD").unwrap_or_else(|_| "postgres".to_string()),
                 max_connections: env::var("DB_MAX_CONNECTIONS").unwrap_or_else(|_| "10".to_string()).parse().unwrap_or(10),
                 cache_ttl_seconds: env::var("CACHE_TTL_SECONDS").unwrap_or_else(|_| "86400".to_string()).parse().unwrap_or(86400),
+            },
+            pons_watcher: PonsWatcherConfig {
+                enabled: env::var("PONS_WS_ENABLED").unwrap_or_else(|_| "false".into()).parse().unwrap_or(false),
+                url: env::var("PONS_WS_URL").unwrap_or_else(|_| "ws://127.0.0.1:8765/subscribe".into()),
             },
             tcp_endpoint: TcpEndpointConfig {
                 enabled: env::var("TCP_ENDPOINT_ENABLED").unwrap_or_else(|_| "true".to_string()).parse().unwrap_or(true),

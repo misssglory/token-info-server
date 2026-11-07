@@ -5,6 +5,8 @@ mod providers;
 mod server;
 mod tcp_forwarder;
 mod token_index;
+mod token_registry;
+mod pons_listener;
 mod types;
 mod source_fetch;
 mod source_scan;
@@ -221,6 +223,15 @@ async fn main() -> anyhow::Result<()> {
             info!("⚠ No label found (provider: {})", token_info.provider);
         }
         return Ok(());
+    }
+
+    // Nonblocking WebSocket consumer; database commits are ordered, RPC work bounded.
+    if app_config.pons_watcher.enabled {
+        if let Some(cache) = &cache {
+            pons_listener::start(app_config.pons_watcher.url.clone(), cache.clone(), providers.clone());
+        } else {
+            error!("Pons watcher requires PostgreSQL (not available with --no-cache)");
+        }
     }
 
     // Server mode

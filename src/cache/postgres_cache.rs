@@ -120,6 +120,7 @@ impl PostgresCache {
               PRIMARY KEY (chain,address)
             )
         "#).execute(pool).await?;
+        crate::token_registry::init(pool).await?;
         info!("Database tables and indexes created successfully");
         Ok(())
     }
@@ -181,6 +182,11 @@ impl PostgresCache {
         .bind(chain)
         .bind(&token_info_json)
         .bind(expires_at);
+        // Register first: OG becomes immutable before any separately cached metadata
+        // is visible. Pons facts remain in the non-expiring registry.
+        if let Some(name) = token_info.long_label.as_ref() {
+            crate::token_registry::register(&self.pool, chain, address, name, token_info.label.as_deref(), Some(token_info.decimals)).await?;
+        }
         query.execute(&self.pool).await?;
         debug!(
             "Cached token info for {} on {} (expires in {} seconds)",

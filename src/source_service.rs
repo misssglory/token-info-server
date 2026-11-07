@@ -53,7 +53,7 @@ async fn get_source(chain: &str, address: &str, cache: Option<&PostgresCache>) -
 
 pub async fn enrich(token: &TokenInfo, cache: Option<&PostgresCache>, raw: bool) -> Value {
     let mut out = serde_json::to_value(token).unwrap_or_else(|_| json!({}));
-    if evm_id(&token.chain).is_none() || token.provider == "none" { return out; }
+    if evm_id(&token.chain).is_none() || matches!(token.provider.as_str(), "none" | "pons-watcher") { return out; }
     match get_source(&token.chain, &token.context, cache).await {
         Ok(Some(contract)) => {
             let analysis: SourceAnalysis = build_source_analysis(&contract);

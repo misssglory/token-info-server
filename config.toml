@@ -32,3 +32,8 @@ forward_tokens = true
 
 [provider_priorities]
 # Optional: Configure provider priorities per chain
+
+# Optional Pons watcher ingestion. Set enabled=true to subscribe.
+[pons_watcher]
+enabled = true
+url = "ws://127.0.0.1:8765/subscribe"

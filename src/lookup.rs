@@ -1,4 +1,22 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+use std::collections::HashMap;
+use once_cell::sync::Lazy;
+use tokio::sync::Mutex;
+
+// Singleflight across TCP requests and Pons background enrichment.
+// Store Weak refs so per-token locks do not accumulate indefinitely.
+static INFLIGHT: Lazy<Mutex<HashMap<String, Weak<Mutex<()>>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+async fn token_lock(key: String) -> Arc<Mutex<()>> {
+    let mut table = INFLIGHT.lock().await;
+    if table.len() > 4096 { table.retain(|_, lock| lock.strong_count() > 0); }
+    if let Some(lock) = table.get(&key).and_then(Weak::upgrade) { return lock; }
+    let lock = Arc::new(Mutex::new(()));
+    table.insert(key, Arc::downgrade(&lock));
+    lock
+}
+
 use crate::providers::TokenProvider;
 use crate::types::TokenInfo;
 use crate::cache::PostgresCache;
@@ -38,6 +56,12 @@ pub async fn lookup_token(
         None if is_evm(address) => vec!["robinhood", "ethereum", "bsc"],
         None => return Ok(blank("unknown", address)),
     };
+    // The first caller resolves the token; others wait asynchronously and use its
+    // cached result. This protects RPC budgets during simultaneous watcher/UI reads.
+    let flight_key = format!("{}:{}", chain_hint.as_deref().unwrap_or("auto"),
+        if is_evm(address) { address.to_ascii_lowercase() } else { address.to_owned() });
+    let flight = token_lock(flight_key).await;
+    let _flight_guard = flight.lock().await;
     let explicit = chain_hint.is_some();
     // Cache-first across *all* candidate chains, before any provider/RPC call.
     // Otherwise an auto lookup probes Robinhood even if Ethereum/BSC is cached.
@@ -45,6 +69,8 @@ pub async fn lookup_token(
         for chain in &chains {
             if let Some(cached) = cache.get(address, chain).await? {
                 if cached.label.is_some() || cached.long_label.is_some() {
+                    let mut cached = cached;
+                    crate::token_registry::overlay(cache.pool(), &mut cached).await?;
                     info!("Cache hit for {} on {} (no RPC)", address, chain);
                     return Ok(cached);
                 }
@@ -71,6 +97,9 @@ pub async fn lookup_token(
                             let _ = forwarder.send_token_address(address, chain).await;
                         }
                     }
+                    if let Some(cache) = cache {
+                        crate::token_registry::overlay(cache.pool(), &mut result).await?;
+                    }
                     return Ok(result);
                 },
                 Ok(_) => debug!("{} did not identify {}", provider.name(), address),
@@ -79,6 +108,17 @@ pub async fn lookup_token(
         }
     }
     // Never guess that an unknown EVM contract belongs to Ethereum.
+    if let Some(cache) = cache {
+        // Ingested Pons token may exist before RPC metadata is available.
+        // Return its watcher facts without claiming on-chain verification.
+        for chain in &chains {
+            let mut fallback = blank(chain, address);
+            if crate::token_registry::overlay(cache.pool(), &mut fallback).await? {
+                fallback.provider = "pons-watcher".into();
+                return Ok(fallback);
+            }
+        }
+    }
     Ok(blank(if explicit { chains[0] } else { "unknown" }, address))
 }
 

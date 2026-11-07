@@ -208,6 +208,8 @@ impl TokenProvider for MetadataApiProvider {
                 website: None,
                 twitter: None,
                 telegram: None,
+                og: None, market_cap_usd: None, market_cap_text: None,
+                developer_name: None, developer_id: None, developer_profile: None,
             });
         }
         
@@ -225,6 +227,8 @@ impl TokenProvider for MetadataApiProvider {
                 website: None,
                 twitter: None,
                 telegram: None,
+                og: None, market_cap_usd: None, market_cap_text: None,
+                developer_name: None, developer_id: None, developer_profile: None,
             });
         }
         
